@@ -177,7 +177,6 @@ const Board = ({ viewTeam, invertColor, useRotatedPieces, styleVariant }) => {
           {(gameState === 'SETUP_HAN' || gameState === 'SETUP_CHO') && (
                <div className="overlay setup-overlay">
                    <h2>{gameState === 'SETUP_HAN' ? "Han (Red)" : "Cho (Blue)"} Setup</h2>
-                   <p>Choose your Sangcharim (Initial Setup):</p>
                    <div className="setup-options">
                        {Object.entries(SETUP_TYPES).map(([key, label]) => {
                            const setupTeam = gameState === 'SETUP_HAN' ? TEAM.HAN : TEAM.CHO;
