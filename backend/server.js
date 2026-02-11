@@ -130,50 +130,222 @@ app.delete('/api/auth/me', authenticateToken, async (req, res) => {
 });
 
 
+// --- Database Schema Init (Ensure games table exists) ---
+const initDB = async () => {
+    try {
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS games (
+                id SERIAL PRIMARY KEY,
+                winner_id INTEGER REFERENCES users(id),
+                loser_id INTEGER REFERENCES users(id),
+                winner_team VARCHAR(10),
+                loser_team VARCHAR(10),
+                moves TEXT, -- JSON string of move history (Gibo)
+                played_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        `);
+        console.log("DB: Games table checked/created");
+    } catch (err) {
+        console.error("DB Init Error:", err);
+    }
+};
+initDB();
+
+// --- Matchmaking Helpers ---
+function getRankScore(rankStr) {
+    if (!rankStr) return 0;
+    // Format: "18급", "1단"
+    // Gup: 18 (Lowest) -> 1 (Highest Gup). let's say score = 20 - Gup. (18급=2, 1급=19)
+    // Dan: 1 (Lowest Dan) -> 9. let's say score = 20 + Dan. (1단=21, 9단=29)
+    
+    if (rankStr.includes('급')) {
+        const num = parseInt(rankStr.replace('급', ''));
+        return 20 - num; 
+    } else if (rankStr.includes('단')) {
+        const num = parseInt(rankStr.replace('단', ''));
+        return 20 + num;
+    }
+    return 0; // Default
+}
+
+function getWinRate(user) {
+    if (!user) return 0;
+    const total = (user.wins || 0) + (user.losses || 0);
+    if (total === 0) return 0;
+    return (user.wins / total);
+}
+
+// Game State Memory
+const activeGames = new Map(); // roomId -> { cho: {id, socketId}, han: {id, socketId}, history: [] }
+
 // Socket.io Logic
 let matchQueue = [];
 
 io.on('connection', (socket) => {
-  console.log('A user connected:', socket.id);
+  // ... (connection log)
+  socket._userInfo = null; 
 
   socket.on('find_match', (userInfo) => {
-    console.log(`User ${socket.id} (Rank: ${userInfo?.rank}) looking for match`);
+    socket._userInfo = userInfo; 
+    console.log(`User ${socket.id} (${userInfo?.nickname}) looking for match`);
     
-    // Check if user is already in queue
     if (matchQueue.find(u => u.id === socket.id)) return;
-
     matchQueue.push({ socket, userInfo });
 
     if (matchQueue.length >= 2) {
-      const player1 = matchQueue.shift();
-      const player2 = matchQueue.shift();
-
-      const roomId = `game_${player1.socket.id}_${player2.socket.id}`;
+      const p1 = matchQueue.shift();
+      const p2 = matchQueue.shift();
       
-      player1.socket.join(roomId);
-      player2.socket.join(roomId);
-
-      // Assign teams: Player 1 = Cho (Blue, First), Player 2 = Han (Red, Second)
-      // In Janggi, Cho moves first.
+      const score1 = getRankScore(p1.userInfo?.rank);
+      const score2 = getRankScore(p2.userInfo?.rank);
       
-      console.log(`Match found: ${player1.socket.id} vs ${player2.socket.id} in ${roomId}`);
+      let choPlayer, hanPlayer;
+      
+      if (score1 < score2) {
+          choPlayer = p1; hanPlayer = p2;
+      } else if (score2 < score1) {
+          choPlayer = p2; hanPlayer = p1;
+      } else {
+          // Rank Tied -> Check Win Rate
+          const rate1 = getWinRate(p1.userInfo);
+          const rate2 = getWinRate(p2.userInfo);
+          if (rate1 < rate2) {
+              choPlayer = p1; hanPlayer = p2;
+          } else if (rate2 < rate1) {
+              choPlayer = p2; hanPlayer = p1;
+          } else {
+              // Tied -> Random
+              if (Math.random() < 0.5) {
+                  choPlayer = p1; hanPlayer = p2;
+              } else {
+                  choPlayer = p2; hanPlayer = p1;
+              }
+          }
+      }
 
-      player1.socket.emit('start_game', { room: roomId, team: 'cho', opponent: player2.userInfo });
-      player2.socket.emit('start_game', { room: roomId, team: 'han', opponent: player1.userInfo });
+      const roomId = `game_${choPlayer.socket.id}_${hanPlayer.socket.id}`;
+      choPlayer.socket.join(roomId);
+      hanPlayer.socket.join(roomId);
+      
+      // Store Game State
+      activeGames.set(roomId, {
+          cho: { id: choPlayer.userInfo.id, socketId: choPlayer.socket.id },
+          han: { id: hanPlayer.userInfo.id, socketId: hanPlayer.socket.id },
+          startTime: new Date()
+      });
+
+      console.log(`Match: [Cho] ${choPlayer.userInfo.nickname} vs [Han] ${hanPlayer.userInfo.nickname}`);
+
+      activeGames.set(roomId, {
+          cho: { id: choPlayer.userInfo.id, socketId: choPlayer.socket.id },
+          han: { id: hanPlayer.userInfo.id, socketId: hanPlayer.socket.id },
+          startTime: new Date()
+      });
+
+      // Notify match found - Clients enters Setup Phase
+      choPlayer.socket.emit('match_found', { room: roomId, team: 'cho', opponent: hanPlayer.userInfo });
+      hanPlayer.socket.emit('match_found', { room: roomId, team: 'han', opponent: choPlayer.userInfo });
     }
   });
 
+  // Setup Sync
+  socket.on('submit_setup', (data) => {
+      // data: { room, team, setupType }
+      // Relay to opponent
+      socket.to(data.room).emit('opponent_setup', { team: data.team, setupType: data.setupType });
+  });
+
   socket.on('move', (data) => {
-    // data: { room, move: { from, to }, turn }
-    // Relay move to the other player in the room
     socket.to(data.room).emit('move', data.move);
+    // Optional: Store move in history in activeGames for Gibo consistency
+  });
+  
+  socket.on('pass', (data) => {
+      socket.to(data.room).emit('pass_turn');
+  });
+  
+  socket.on('resign', (data) => {
+      const winnerTeam = data.team === 'cho' ? 'han' : 'cho';
+      io.to(data.room).emit('game_over', { winner: winnerTeam, type: 'resign' });
+      processGameEnd(data.room, winnerTeam, data.history);
+  });
+  
+  socket.on('checkmate', (data) => {
+      io.to(data.room).emit('game_over', { winner: data.winner, type: 'checkmate' });
+      processGameEnd(data.room, data.winner, data.history);
   });
 
   socket.on('disconnect', () => {
-    console.log('User disconnected:', socket.id);
-    // Remove from queue if waiting
+    // Handle disconnection
     matchQueue = matchQueue.filter(u => u.socket.id !== socket.id);
+    // If in game, logic (optional MVP: Auto resign?)
   });
+});
+
+async function processGameEnd(roomId, winnerTeam, history) {
+    const game = activeGames.get(roomId);
+    if (!game) return;
+
+    const winnerId = winnerTeam === 'cho' ? game.cho.id : game.han.id;
+    const loserId = winnerTeam === 'cho' ? game.han.id : game.cho.id;
+    const winnerRole = winnerTeam;
+    const loserRole = winnerTeam === 'cho' ? 'han' : 'cho';
+
+    try {
+        // Update Stats
+        await pool.query('UPDATE users SET wins = wins + 1, coins = coins + 5 WHERE id = $1', [winnerId]);
+        await pool.query('UPDATE users SET losses = losses + 1 WHERE id = $1', [loserId]);
+        
+        // Save Game Record
+        await pool.query(
+            'INSERT INTO games (winner_id, loser_id, winner_team, loser_team, moves) VALUES ($1, $2, $3, $4, $5)',
+            [winnerId, loserId, winnerRole, loserRole, JSON.stringify(history)]
+        );
+        console.log(`Game ${roomId} ended. Winner: ${winnerId}, Saved to DB.`);
+        
+        activeGames.delete(roomId);
+    } catch (err) {
+        console.error("Error processing game end:", err);
+    }
+}
+
+
+// --- Replay / Game History API ---
+app.get('/api/games', async (req, res) => {
+    try {
+        const result = await pool.query(`
+            SELECT g.id, g.played_at, g.winner_team, g.loser_team,
+                   u1.nickname as winner_name, u2.nickname as loser_name
+            FROM games g
+            JOIN users u1 ON g.winner_id = u1.id
+            JOIN users u2 ON g.loser_id = u2.id
+            ORDER BY g.played_at DESC
+            LIMIT 50
+        `);
+        res.json(result.rows);
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'DB Error' });
+    }
+});
+
+app.get('/api/games/:id', async (req, res) => {
+    try {
+        const result = await pool.query(`
+            SELECT g.*, 
+                   u1.nickname as winner_name, u2.nickname as loser_name
+            FROM games g
+            JOIN users u1 ON g.winner_id = u1.id
+            JOIN users u2 ON g.loser_id = u2.id
+            WHERE g.id = $1
+        `, [req.params.id]);
+        
+        if (result.rows.length === 0) return res.status(404).json({ error: 'Game not found' });
+        res.json(result.rows[0]);
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'DB Error' });
+    }
 });
 
 // Handle React routing

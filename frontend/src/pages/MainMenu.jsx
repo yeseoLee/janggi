@@ -43,7 +43,7 @@ function MainMenu() {
       <div style={{ display: 'flex', flexDirection: 'column', gap: 15, width: 250 }}>
           <button onClick={() => navigate('/game?mode=ai')}>AI Match (Solo Play)</button>
           <button onClick={() => navigate('/game?mode=online')}>Online Match</button>
-          <button onClick={() => navigate('/replay')} disabled>Replay (Coming Soon)</button>
+          <button onClick={() => navigate('/replay')}>Replay (Gibo)</button>
       </div>
     </div>
   );
