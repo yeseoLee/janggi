@@ -2,7 +2,7 @@
   position: relative;
   /* Fluid sizing */
   width: 90vmin;
-  max-width: 650px; 
+  max-width: 800px; 
   aspect-ratio: 500 / 550;
   height: auto;
   background-color: #e3c080;
@@ -345,8 +345,9 @@
     }
     
     .janggi-board {
-        /* Allow board to take more focus */
-        width: 60vmin; 
-        max-width: 800px;
+        /* Remove explicit width reduction to prevent shrinking */
+        /* It will inherit 90vmin from default, and flex-shrink will handle overlap */
+        /* Ensure it doesn't get too small if screen is narrow but above 950px */
+        flex-shrink: 1;
     }
 }
