@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import Piece from './Piece';
-import { INITIAL_BOARD, TEAM, PIECE_TYPE } from '../game/constants';
+import { TEAM, PIECE_TYPE, SETUP_TYPES, generateBoard } from '../game/constants';
 import { getValidMoves, getSafeMoves, isCheck, isCheckmate, calculateScore } from '../game/rules';
 import './Board.css';
 
@@ -8,7 +8,12 @@ const Board = ({ viewTeam, invertColor, useRotatedPieces, styleVariant }) => {
   const files = 9;
   const ranks = 10;
   
-  const [board, setBoard] = useState(INITIAL_BOARD);
+  // Game States
+  const [gameState, setGameState] = useState('SETUP_HAN'); // SETUP_HAN -> SETUP_CHO -> PLAYING
+  const [hanSetup, setHanSetup] = useState(null);
+  const [choSetup, setChoSetup] = useState(null);
+
+  const [board, setBoard] = useState(Array(10).fill(Array(9).fill(null))); // Start empty
   const [turn, setTurn] = useState(TEAM.CHO); // Cho usually moves first
   const [selectedPos, setSelectedPos] = useState(null);
   const [validMoves, setValidMoves] = useState([]);
@@ -19,25 +24,45 @@ const Board = ({ viewTeam, invertColor, useRotatedPieces, styleVariant }) => {
   const [checkAlert, setCheckAlert] = useState(null); // 'CHO' or 'HAN' is in check
   const [scores, setScores] = useState({ cho: 72, han: 73.5 }); // Initial approximate scores
 
-  // Check for "Janggun" (Check) on mount/update (mainly for initial invalid states or after Undo)
+  // Start game when both setups are ready
+  const startGame = (hSetup, cSetup) => {
+      const initialBoard = generateBoard(cSetup, hSetup);
+      setBoard(initialBoard);
+      setGameState('PLAYING');
+      setTurn(TEAM.CHO);
+      setScores(calculateScore(initialBoard)); // Recalculate
+  };
+
+  const handleSetupSelect = (type) => {
+      if (gameState === 'SETUP_HAN') {
+          setHanSetup(type);
+          setGameState('SETUP_CHO');
+      } else if (gameState === 'SETUP_CHO') {
+          setChoSetup(type);
+          startGame(hanSetup, type);
+      }
+  };
+
+  // Check for "Janggun" (Check) on mount/update
   useEffect(() => {
+    if (gameState !== 'PLAYING') return;
+
     // Update Score
     setScores(calculateScore(board));
 
     if (isCheck(board, turn)) {
-        setCheckAlert(turn);
-        // Checkmate check happens after move usually, but good to have here too 
+        setCheckAlert(turn); 
         if (isCheckmate(board, turn)) {
             setWinner(turn === TEAM.CHO ? TEAM.HAN : TEAM.CHO);
         }
     } else {
         setCheckAlert(null);
     }
-  }, [board, turn]);
+  }, [board, turn, gameState]);
 
   // Handle cell click (logic for selection and movement)
   const handleCellClick = (r, c) => {
-    if (winner) return;
+    if (gameState !== 'PLAYING' || winner) return;
 
     // If we have a selected piece, check if the clicked cell is a valid move
     if (selectedPos) {
@@ -81,20 +106,15 @@ const Board = ({ viewTeam, invertColor, useRotatedPieces, styleVariant }) => {
     setSelectedPos(null);
     setValidMoves([]);
     
-    // Check/Checkmate detection
-    if (isCheck(newBoard, nextTurn)) {
-        setCheckAlert(nextTurn);
-        if (isCheckmate(newBoard, nextTurn)) {
-            setWinner(turn); // Current mover wins
-        }
-    } else {
-        setCheckAlert(null);
-    }
+    // Check detection moved to useEffect to ensure it runs on board update
   };
 
   // Game Controls
   const handleReset = () => {
-      setBoard(INITIAL_BOARD);
+      setGameState('SETUP_HAN');
+      setHanSetup(null);
+      setChoSetup(null);
+      setBoard(Array(10).fill(Array(9).fill(null)));
       setTurn(TEAM.CHO);
       setHistory([]);
       setWinner(null);
@@ -110,16 +130,12 @@ const Board = ({ viewTeam, invertColor, useRotatedPieces, styleVariant }) => {
       setTurn(lastState.turn);
       setHistory(history.slice(0, -1));
       setWinner(null);
-      // Check logic will run via useEffect
       setSelectedPos(null);
       setValidMoves([]);
   };
 
   const handlePass = () => {
       if (winner) return;
-      // Cannot pass if in Check? Rules say you can pass IF you can't move? 
-      // Usually if in Check, you MUST block. If you can't, you lose.
-      // So you shouldn't pass if in Check.
       if (checkAlert === turn) {
           alert("Janggun! You cannot pass while in check.");
           return;
@@ -156,9 +172,45 @@ const Board = ({ viewTeam, invertColor, useRotatedPieces, styleVariant }) => {
                   <button onClick={handleReset}>Play Again</button>
               </div>
           )}
+
+          {/* Setup Overlay */}
+          {(gameState === 'SETUP_HAN' || gameState === 'SETUP_CHO') && (
+               <div className="overlay setup-overlay">
+                   <h2>{gameState === 'SETUP_HAN' ? "Han (Red)" : "Cho (Blue)"} Setup</h2>
+                   <p>Choose your Sangcharim (Initial Setup):</p>
+                   <div className="setup-options">
+                       {Object.entries(SETUP_TYPES).map(([key, label]) => {
+                           const setupTeam = gameState === 'SETUP_HAN' ? TEAM.HAN : TEAM.CHO;
+                           const pieces = [];
+                           for (const char of key) {
+                               if (char === 'M') pieces.push(PIECE_TYPE.HORSE);
+                               else if (char === 'S') pieces.push(PIECE_TYPE.ELEPHANT);
+                           }
+                           
+                           return (
+                               <button key={key} onClick={() => handleSetupSelect(label)} className="setup-btn">
+                                   <div className="setup-label">{label}</div>
+                                   <div className="setup-preview">
+                                       {pieces.map((pType, idx) => (
+                                           <div key={idx} className="setup-piece">
+                                               <Piece 
+                                                   team={setupTeam} 
+                                                   type={pType} 
+                                                   styleVariant={styleVariant} 
+                                                   inverted={invertColor} 
+                                               />
+                                           </div>
+                                       ))}
+                                   </div>
+                               </button>
+                           );
+                       })}
+                   </div>
+               </div>
+          )}
           
           {/* Check Notification */}
-          {checkAlert && !winner && (
+          {checkAlert && !winner && (gameState === 'PLAYING') && (
               <div className="check-alert">
                   JANGGUN! ({checkAlert.toUpperCase()})
               </div>
