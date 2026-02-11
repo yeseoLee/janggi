@@ -297,6 +297,7 @@
 
 /* --- Responsive Layout --- */
 
+
 .janggi-game-container {
     display: flex;
     flex-direction: column;
@@ -310,6 +311,8 @@
     gap: 20px;
     width: 100%;
     max-width: 500px;
+    /* Center items horizontally within the sidebar */
+    align-items: center; 
 }
 
 .settings-controls {
@@ -319,6 +322,10 @@
     display: flex;
     flex-direction: column;
     gap: 15px;
+    /* Ensure the settings box itself is centered if it doesn't take full width */
+    width: 100%; 
+    box-sizing: border-box;
+    align-items: center; 
 }
 
 .control-row {
@@ -333,7 +340,7 @@
 @media (min-width: 950px) {
     .janggi-game-container {
         flex-direction: row;
-        align-items: flex-start;
+        align-items: center; /* Vertically align sidebar to center relative to board */
         justify-content: center;
     }
     
