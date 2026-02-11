@@ -153,147 +153,197 @@ const Board = ({
   };
 
   return (
-        <div className="janggi-board">
-          {/* Winner Overlay */}
-          {winner && (
-              <div className="overlay winner-overlay">
-                  <div>Game Over</div>
-                  <div style={{ color: winner === TEAM.CHO ? 'blue' : 'red' }}>{winner.toUpperCase()} WINS!</div>
-                  <button onClick={handleReset}>Play Again</button>
-              </div>
-          )}
+    <div className="janggi-game-container">
+        <div className="janggi-board-area">
+            <div className="janggi-board">
+              {/* Winner Overlay */}
+              {winner && (
+                  <div className="overlay winner-overlay">
+                      <div>Game Over</div>
+                      <div style={{ color: winner === TEAM.CHO ? 'blue' : 'red' }}>{winner.toUpperCase()} WINS!</div>
+                      <button onClick={handleReset}>Play Again</button>
+                  </div>
+              )}
 
-          {/* Setup Overlay */}
-          {(gameState === 'SETUP_HAN' || gameState === 'SETUP_CHO') && (
-               <div className="overlay setup-overlay">
-                   <h2>{gameState === 'SETUP_HAN' ? "Han (Red)" : "Cho (Blue)"} Setup</h2>
-                   <div className="setup-options">
-                       {Object.entries(SETUP_TYPES).map(([key, label]) => {
-                           const setupTeam = gameState === 'SETUP_HAN' ? TEAM.HAN : TEAM.CHO;
-                           const pieces = [];
-                           for (const char of key) {
-                               if (char === 'M') pieces.push(PIECE_TYPE.HORSE);
-                               else if (char === 'S') pieces.push(PIECE_TYPE.ELEPHANT);
-                           }
-                           
-                           return (
-                               <button key={key} onClick={() => handleSetupSelect(label)} className="setup-btn">
-                                   <div className="setup-label">{label}</div>
-                                   <div className="setup-preview">
-                                       {pieces.map((pType, idx) => (
-                                           <div key={idx} className="setup-piece">
-                                               <Piece 
-                                                   team={setupTeam} 
-                                                   type={pType} 
-                                                   styleVariant={styleVariant} 
-                                                   inverted={invertColor} 
-                                               />
-                                           </div>
-                                       ))}
-                                   </div>
-                               </button>
-                           );
-                       })}
+              {/* Setup Overlay */}
+              {(gameState === 'SETUP_HAN' || gameState === 'SETUP_CHO') && (
+                   <div className="overlay setup-overlay">
+                       <h2>{gameState === 'SETUP_HAN' ? "Han (Red)" : "Cho (Blue)"} Setup</h2>
+                       <div className="setup-options">
+                           {Object.entries(SETUP_TYPES).map(([key, label]) => {
+                               const setupTeam = gameState === 'SETUP_HAN' ? TEAM.HAN : TEAM.CHO;
+                               const pieces = [];
+                               for (const char of key) {
+                                   if (char === 'M') pieces.push(PIECE_TYPE.HORSE);
+                                   else if (char === 'S') pieces.push(PIECE_TYPE.ELEPHANT);
+                               }
+                               
+                               return (
+                                   <button key={key} onClick={() => handleSetupSelect(label)} className="setup-btn">
+                                       <div className="setup-label">{label}</div>
+                                       <div className="setup-preview">
+                                           {pieces.map((pType, idx) => (
+                                               <div key={idx} className="setup-piece">
+                                                   <Piece 
+                                                       team={setupTeam} 
+                                                       type={pType} 
+                                                       styleVariant={styleVariant} 
+                                                       inverted={invertColor} 
+                                                   />
+                                               </div>
+                                           ))}
+                                       </div>
+                                   </button>
+                               );
+                           })}
+                       </div>
                    </div>
-               </div>
-          )}
-          
-          {/* Check Notification */}
-          {checkAlert && !winner && (gameState === 'PLAYING') && (
-              <div className="check-alert">
-                  JANGGUN! ({checkAlert.toUpperCase()})
-              </div>
-          )}
+              )}
+              
+              {/* Check Notification */}
+              {checkAlert && !winner && (gameState === 'PLAYING') && (
+                  <div className="check-alert">
+                      JANGGUN! ({checkAlert.toUpperCase()})
+                  </div>
+              )}
 
-          <div className="grid-container">
-            {/* Render grid lines: 9 vertical lines, 10 horizontal lines */}
-            {Array.from({ length: ranks - 1 }).map((_, r) => (
-              <div key={`row-${r}`} className="grid-row">
-                {Array.from({ length: files - 1 }).map((_, c) => (
-                  <div key={`cell-${r}-${c}`} className="grid-cell"></div>
+              <div className="grid-container">
+                {/* Render grid lines: 9 vertical lines, 10 horizontal lines */}
+                {Array.from({ length: ranks - 1 }).map((_, r) => (
+                  <div key={`row-${r}`} className="grid-row">
+                    {Array.from({ length: files - 1 }).map((_, c) => (
+                      <div key={`cell-${r}-${c}`} className="grid-cell"></div>
+                    ))}
+                  </div>
+                ))}
+                
+                <div className="palace palace-top">
+                   <div className="palace-cross"></div>
+                </div>
+                
+                <div className="palace palace-bottom">
+                   <div className="palace-cross"></div>
+                </div>
+              </div>
+              
+              <div className="piece-layer">
+                {/* Render Interaction Overlay for Clicks */}
+                {Array.from({ length: ranks }).map((_, r) => (
+                    Array.from({ length: files }).map((_, c) => {
+                        const isSelected = selectedPos && selectedPos.r === r && selectedPos.c === c;
+                        const isValid = validMoves.some(m => m.r === r && m.c === c);
+                        const piece = board[r][c];
+                        
+                        // Position calculation
+                        const renderR = viewTeam === TEAM.HAN ? (ranks - 1) - r : r;
+                        const renderC = viewTeam === TEAM.HAN ? (files - 1) - c : c;
+
+                        const left = (renderC / (files - 1)) * 100;
+                        const top = (renderR / (ranks - 1)) * 100;
+
+                        // Rotation calculation
+                        const isOpponent = piece && (piece.team !== viewTeam);
+                        
+                        // Opponent rotation
+                        let rotation = 0;
+                        if (useRotatedPieces && isOpponent) rotation = 180;
+                        
+                        return (
+                            <div 
+                                key={`cell-interaction-${r}-${c}`}
+                                style={{ 
+                                    left: `${left}%`,
+                                    top: `${top}%`,
+                                    zIndex: 10,
+                                }}
+                                className={`interaction-cell ${isSelected ? 'selected' : ''} ${isValid ? 'valid' : ''}`}
+                                onClick={() => handleCellClick(r, c)}
+                            >
+                                {isValid && <div className="move-marker" />}
+                                
+                                {piece && (
+                                     <div style={{ 
+                                         width: '100%', height: '100%', 
+                                         display: 'flex', justifyContent: 'center', alignItems: 'center',
+                                         transform: `rotate(${rotation}deg)`,
+                                         transition: 'transform 0.3s ease'
+                                     }}>
+                                        <Piece 
+                                            team={piece.team} 
+                                            type={piece.type}
+                                            variant={null}
+                                            styleVariant={styleVariant}
+                                            inverted={invertColor} 
+                                            rotated={false} 
+                                        />
+                                     </div>
+                                )}
+                            </div>
+                        );
+                    })
                 ))}
               </div>
-            ))}
-            
-            <div className="palace palace-top">
-               <div className="palace-cross"></div>
             </div>
-            
-            <div className="palace palace-bottom">
-               <div className="palace-cross"></div>
-            </div>
-          </div>
-          
-          <div className="piece-layer">
-            {/* Render Interaction Overlay for Clicks */}
-            {/* We need clickable areas for every intersection (9x10) */}
-            {Array.from({ length: ranks }).map((_, r) => (
-                Array.from({ length: files }).map((_, c) => {
-                    const isSelected = selectedPos && selectedPos.r === r && selectedPos.c === c;
-                    const isValid = validMoves.some(m => m.r === r && m.c === c);
-                    const piece = board[r][c];
-                    
-                    // Position calculation (percentage based)
-                    // If viewing as Han, flip the board (180 degrees)
-                    const renderR = viewTeam === TEAM.HAN ? (ranks - 1) - r : r;
-                    const renderC = viewTeam === TEAM.HAN ? (files - 1) - c : c;
-
-                    const left = (renderC / (files - 1)) * 100;
-                    const top = (renderR / (ranks - 1)) * 100;
-
-                    // Rotation calculation
-                    const isOpponent = piece && (piece.team !== viewTeam);
-                    
-                    // Opponent rotation: if useRotatedPieces, rotate opponent 180
-                    let rotation = 0;
-                    if (useRotatedPieces && isOpponent) rotation = 180;
-                    
-                    return (
-                        <div 
-                            key={`cell-interaction-${r}-${c}`}
-                            style={{ 
-                                left: `${left}%`,
-                                top: `${top}%`,
-                                zIndex: 10,
-                            }}
-                            className={`interaction-cell ${isSelected ? 'selected' : ''} ${isValid ? 'valid' : ''}`}
-                            onClick={() => handleCellClick(r, c)}
-                        >
-                            {/* Render marking for valid move */}
-                            {isValid && <div className="move-marker" />}
-                            
-                            {/* Render Piece if present */}
-                            {piece && (
-                                 <div style={{ 
-                                     width: '100%', height: '100%', 
-                                     display: 'flex', justifyContent: 'center', alignItems: 'center',
-                                     transform: `rotate(${rotation}deg)`,
-                                     transition: 'transform 0.3s ease'
-                                 }}>
-                                    <Piece 
-                                        team={piece.team} 
-                                        type={piece.type}
-                                        variant={null}
-                                        styleVariant={styleVariant}
-                                        inverted={invertColor}
-                                        rotated={false} 
-                                    />
-                                 </div>
-                            )}
-                        </div>
-                    );
-                })
-            ))}
-          </div>
         </div>
 
-        {/* Score Display */}
-        <div className="score-board">
-            <div className="score-item cho">
-                <span className="team-name">Cho (Blue)</span>: {scores.cho}
+        <div className="janggi-sidebar">
+            <div className="score-board">
+                <div className="score-item cho">
+                    <span className="team-name">Cho (Blue)</span>: {scores.cho}
+                </div>
+                <div className="score-item han">
+                    <span className="team-name">Han (Red)</span>: {scores.han}
+                </div>
             </div>
-            <div className="score-item han">
-                <span className="team-name">Han (Red)</span>: {scores.han}
+
+            <div className="game-status-bar">
+                 <div className="turn-indicator">
+                     Current Turn: <span style={{ color: turn === TEAM.CHO ? 'blue' : 'red', fontWeight: 'bold' }}>{turn.toUpperCase()}</span>
+                 </div>
+                 
+                 <div className="game-controls">
+                     <button onClick={handleReset}>Reset</button>
+                     <button onClick={handleUndo} disabled={history.length === 0}>Undo</button>
+                     <button onClick={handlePass}>Pass</button>
+                 </div>
+            </div>
+
+            <div className="settings-controls">
+                <div className="control-row">
+                  <label>
+                    View Point:
+                    <select value={viewTeam} onChange={(e) => setViewTeam(e.target.value)}>
+                      <option value={TEAM.CHO}>Cho (Blue)</option>
+                      <option value={TEAM.HAN}>Han (Red)</option>
+                    </select>
+                  </label>
+                  
+                  <label>
+                     Style:
+                     <select value={styleVariant} onChange={(e) => setStyleVariant(e.target.value)}>
+                       <option value="normal">Normal</option>
+                       <option value="2">Calligraphy 2</option>
+                     </select>
+                  </label>
+                </div>
+
+                <div className="control-row">
+                  <label>
+                    <input 
+                      type="checkbox" 
+                      checked={invertColor} 
+                      onChange={(e) => setInvertColor(e.target.checked)} 
+                    /> Invert Color
+                  </label>
+                  
+                  <label>
+                    <input 
+                      type="checkbox" 
+                      checked={useRotatedPieces} 
+                      onChange={(e) => setUseRotatedPieces(e.target.checked)} 
+                    /> Rotated Pieces
+                  </label>
+                </div>
             </div>
         </div>
     </div>
