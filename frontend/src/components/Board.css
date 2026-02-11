@@ -172,3 +172,129 @@
 .piece-layer.rotated-view .piece {
   transform: rotate(180deg);
 }
+
+/* --- Overlays & Notifications --- */
+
+.overlay {
+    position: absolute;
+    top: 0; left: 0; width: 100%; height: 100%;
+    background: rgba(0, 0, 0, 0.85);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    color: white;
+    font-size: 2em;
+    z-index: 100;
+    border-radius: 4px;
+}
+
+.winner-overlay > div {
+    margin-bottom: 20px;
+}
+
+.check-alert {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  color: red;
+  font-size: 3em;
+  font-weight: bold;
+  text-shadow: 2px 2px 5px black;
+  z-index: 90;
+  pointer-events: none;
+  animation: flash 2s infinite;
+}
+
+@keyframes flash {
+  0% { opacity: 1; }
+  50% { opacity: 0; }
+  100% { opacity: 1; }
+}
+
+/* --- Score Board --- */
+
+.score-board {
+  display: flex;
+  gap: 40px;
+  background: rgba(0,0,0,0.3);
+  padding: 10px 30px;
+  border-radius: 8px;
+  font-size: 1.2em;
+  font-weight: bold;
+  margin-top: 10px;
+  justify-content: center;
+}
+
+.score-item.cho { color: #5078f2; }
+.score-item.han { color: #f25050; }
+
+/* --- Setup UI --- */
+
+.setup-overlay {
+    background: rgba(40, 44, 52, 0.95);
+    z-index: 200;
+}
+
+/* 2x2 Grid Layout for Setup Options */
+.setup-options {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 15px;
+    margin-top: 20px;
+    width: 100%;
+    max-width: 400px;
+}
+
+.setup-btn {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 15px;
+    border: 2px solid #555;
+    background: #333;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s;
+    width: 100%; /* Fill grid cell */
+    box-sizing: border-box;
+    color: #eee;
+}
+
+.setup-btn:hover {
+    background: #444;
+    border-color: #888;
+    transform: translateY(-2px);
+}
+
+.setup-label {
+    margin-bottom: 10px;
+    font-size: 1rem;
+    font-weight: bold;
+}
+
+.setup-preview {
+    display: flex;
+    flex-direction: row; /* Horizontal alignment */
+    gap: 4px;
+    background: rgba(255, 255, 255, 0.1);
+    padding: 5px;
+    border-radius: 4px;
+}
+
+/* Restrict Piece Size for Setup */
+.setup-piece {
+    width: 30px; 
+    height: 30px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+/* Ensure inner piece image fits */
+.setup-piece .piece img {
+    width: 100%;
+    height: 100%;
+}
