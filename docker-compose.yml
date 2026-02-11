@@ -1,0 +1,41 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: janggi-postgres
+    environment:
+      POSTGRES_USER: janggi_user
+      POSTGRES_PASSWORD: janggi_password
+      POSTGRES_DB: janggi_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./backend/init.sql:/docker-entrypoint-initdb.d/init.sql
+      - postgres_data:/var/lib/postgresql/data
+
+  backend:
+    build: ./backend
+    container_name: janggi-backend
+    ports:
+      - "3000:3000"
+    environment:
+      DB_HOST: postgres
+      DB_USER: janggi_user
+      DB_PASSWORD: janggi_password
+      DB_NAME: janggi_db
+      DB_PORT: 5432
+      PORT: 3000
+    depends_on:
+      - postgres
+
+  frontend:
+    build: ./frontend
+    container_name: janggi-frontend
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:
