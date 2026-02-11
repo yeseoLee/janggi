@@ -11,8 +11,6 @@ function App() {
 
   return (
     <div className="App">
-      <h1>Janggi (Korean Chess)</h1>
-      
       <div className="controls">
         <div className="control-row">
           <label>
