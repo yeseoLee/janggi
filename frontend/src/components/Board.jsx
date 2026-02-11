@@ -149,6 +149,16 @@ const Board = ({ viewTeam, invertColor, useRotatedPieces, styleVariant }) => {
 
   return (
     <div className="janggi-board-container">
+        {/* Score Display */}
+        <div className="score-board">
+            <div className="score-item cho">
+                <span className="team-name">Cho (Blue)</span>: {scores.cho}
+            </div>
+            <div className="score-item han">
+                <span className="team-name">Han (Red)</span>: {scores.han}
+            </div>
+        </div>
+
         {/* Game Info & Controls */}
         <div className="game-status-bar">
              <div className="turn-indicator">
@@ -161,8 +171,7 @@ const Board = ({ viewTeam, invertColor, useRotatedPieces, styleVariant }) => {
                  <button onClick={handlePass}>Pass</button>
              </div>
         </div>
-
-        {/* Board Area */}
+    </div>
         <div className="janggi-board">
           {/* Winner Overlay */}
           {winner && (

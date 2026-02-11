@@ -11,6 +11,13 @@ function App() {
 
   return (
     <div className="App">
+      <Board 
+        viewTeam={viewTeam}
+        invertColor={invertColor}
+        useRotatedPieces={useRotatedPieces}
+        styleVariant={styleVariant}
+      />
+
       <div className="controls">
         <div className="control-row">
           <label>
@@ -48,13 +55,6 @@ function App() {
           </label>
         </div>
       </div>
-
-      <Board 
-        viewTeam={viewTeam}
-        invertColor={invertColor}
-        useRotatedPieces={useRotatedPieces}
-        styleVariant={styleVariant}
-      />
     </div>
   )
 }
