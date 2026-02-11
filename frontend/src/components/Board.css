@@ -1,7 +1,10 @@
 .janggi-board {
   position: relative;
-  width: 500px;
-  height: 550px;
+  /* Fluid sizing */
+  width: 90vmin;
+  max-width: 650px; 
+  aspect-ratio: 500 / 550;
+  height: auto;
   background-color: #e3c080;
   border: 2px solid #5a3a22;
   /* Centering */
@@ -20,8 +23,8 @@
   position: absolute;
   top: 0;
   left: 0;
-  /* Increase padding to ensure pieces on edge don't clip */
-  padding: 40px; 
+  /* Percentage padding to scale with board */
+  padding: 8%; 
   box-sizing: border-box;
 }
 
@@ -49,61 +52,45 @@
 .grid-container::before {
   content: '';
   position: absolute;
-  top: 40px;
-  left: 40px;
-  right: 40px;
-  bottom: 40px;
+  top: 8%;
+  left: 8%;
+  right: 8%;
+  bottom: 8%;
   border-top: 1px solid #000;
   border-left: 1px solid #000;
   pointer-events: none;
 }
 
 /* Update palace positioning based on padding */
-.palace-top {
-  top: 40px;
-  left: calc(50% - 50px + 0px); /* Adjust if cell size changes? */
-  /* Palace is 2 cells wide. 
-     Grid inner width = 500 - 80 = 420.
-     8 cols -> 52.5px per col.
-     Palace width = 105px.
-     Height = 550 - 80 = 470.
-     9 rows -> 52.2px per row.
-     Palace height = 104.4px.
-     We need to be precise or use % there too.
-     Let's use % for palace as well.
-  */
-  width: calc(100% - 80px); /* This is the grid width */
-  height: calc(100% - 80px); /* Grid height */
-  /* Wait, palace is specific 2x2 block. */
-}
-/* Re-doing Palace with % relative to grid area */
+/* Palace size: 2 cols out of 8 cols = 25% of inner width */
+/* Inner width is 100% - 16%. Palace width relative to board = 21% */
 .palace {
     position: absolute;
-    /* 2 units wide out of 8 units total width */
-    width: 25%; 
-    /* 2 units high out of 9 units total height */
-    height: 22.222%; 
+    /* 2/8 of inner width (84%) = 21% */
+    width: 21%; 
+    /* 2/9 of inner height (84%) ~= 18.66% */
+    height: 18.66%; 
     pointer-events: none;
 }
 
 .palace-top {
-    top: 40px;
+    top: 8%;
     left: 50%;
     transform: translateX(-50%);
 }
 
 .palace-bottom {
-    bottom: 40px;
+    bottom: 8%;
     left: 50%;
     transform: translateX(-50%);
 }
 
 .piece-layer {
   position: absolute;
-  top: 40px; /* Match padding */
-  left: 40px;
-  right: 40px;
-  bottom: 40px;
+  top: 8%; 
+  left: 8%;
+  right: 8%;
+  bottom: 8%;
   /* Reduce size to match the GRID LINES exactly */
   /* Pieces are positioned relative to this box */
   /* Remove grid display, use absolute positioning for children */
@@ -124,8 +111,10 @@
 /* Enforce values even if interaction-cell class is used */
 .piece-layer .interaction-cell {
   position: absolute; /* Force absolute positioning */
-  width: 45px; 
-  height: 45px;
+  /* Responsive piece size: approx 10% of the inner grid width */
+  width: 11%; 
+  aspect-ratio: 1/1;
+  height: auto;
   /* Center the cell on its coordinate */
   transform: translate(-50%, -50%);
   z-index: 10;
@@ -138,8 +127,8 @@
 }
 
 .move-marker {
-  width: 12px;
-  height: 12px;
+  width: 30%; /* Relative to cell */
+  height: 30%;
   background-color: rgba(0, 255, 0, 0.6);
   border-radius: 50%;
   position: absolute;
@@ -310,7 +299,8 @@
     flex-direction: column;
     gap: 20px;
     width: 100%;
-    max-width: 500px;
+    /* Remove strict max-width to allow growth optionally, or keep it but larger */
+    max-width: 500px; /* Keep reasonable limit on mobile */
     /* Center items horizontally within the sidebar */
     align-items: center; 
 }
@@ -342,9 +332,21 @@
         flex-direction: row;
         align-items: center; /* Vertically align sidebar to center relative to board */
         justify-content: center;
+        gap: 40px; /* Increase gap for wider screens */
+        padding: 20px;
+        box-sizing: border-box;
     }
     
     .janggi-sidebar {
-        width: 300px; /* Fixed width for sidebar */
+        /* Sidebar takes remaining space but not too much */
+        width: 350px; 
+        flex-shrink: 0;
+        max-width: none;
+    }
+    
+    .janggi-board {
+        /* Allow board to take more focus */
+        width: 60vmin; 
+        max-width: 800px;
     }
 }
