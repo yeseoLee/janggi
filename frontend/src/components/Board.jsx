@@ -4,7 +4,12 @@ import { TEAM, PIECE_TYPE, SETUP_TYPES, generateBoard } from '../game/constants'
 import { getValidMoves, getSafeMoves, isCheck, isCheckmate, calculateScore } from '../game/rules';
 import './Board.css';
 
-const Board = ({ viewTeam, invertColor, useRotatedPieces, styleVariant }) => {
+const Board = ({ 
+    viewTeam, setViewTeam, 
+    invertColor, setInvertColor, 
+    useRotatedPieces, setUseRotatedPieces, 
+    styleVariant, setStyleVariant 
+}) => {
   const files = 9;
   const ranks = 10;
   

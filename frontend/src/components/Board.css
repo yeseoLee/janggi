@@ -294,7 +294,50 @@
 }
 
 /* Ensure inner piece image fits */
-.setup-piece .piece img {
+
+/* --- Responsive Layout --- */
+
+.janggi-game-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 20px;
+}
+
+.janggi-sidebar {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
     width: 100%;
-    height: 100%;
+    max-width: 500px;
+}
+
+.settings-controls {
+    background: rgba(0,0,0,0.2);
+    padding: 15px;
+    border-radius: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+}
+
+.control-row {
+    display: flex;
+    gap: 20px;
+    justify-content: center;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+/* Wide screen: Board Left, Sidebar Right */
+@media (min-width: 950px) {
+    .janggi-game-container {
+        flex-direction: row;
+        align-items: flex-start;
+        justify-content: center;
+    }
+    
+    .janggi-sidebar {
+        width: 300px; /* Fixed width for sidebar */
+    }
 }

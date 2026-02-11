@@ -13,48 +13,14 @@ function App() {
     <div className="App">
       <Board 
         viewTeam={viewTeam}
+        setViewTeam={setViewTeam}
         invertColor={invertColor}
+        setInvertColor={setInvertColor}
         useRotatedPieces={useRotatedPieces}
+        setUseRotatedPieces={setUseRotatedPieces}
         styleVariant={styleVariant}
+        setStyleVariant={setStyleVariant}
       />
-
-      <div className="controls">
-        <div className="control-row">
-          <label>
-            View Point:
-            <select value={viewTeam} onChange={(e) => setViewTeam(e.target.value)}>
-              <option value={TEAM.CHO}>Cho (Blue)</option>
-              <option value={TEAM.HAN}>Han (Red)</option>
-            </select>
-          </label>
-          
-          <label>
-             Style:
-             <select value={styleVariant} onChange={(e) => setStyleVariant(e.target.value)}>
-               <option value="normal">Normal</option>
-               <option value="2">Calligraphy 2</option>
-             </select>
-          </label>
-        </div>
-
-        <div className="control-row">
-          <label>
-            <input 
-              type="checkbox" 
-              checked={invertColor} 
-              onChange={(e) => setInvertColor(e.target.checked)} 
-            /> Invert Color
-          </label>
-          
-          <label>
-            <input 
-              type="checkbox" 
-              checked={useRotatedPieces} 
-              onChange={(e) => setUseRotatedPieces(e.target.checked)} 
-            /> Rotated Pieces (Opponent)
-          </label>
-        </div>
-      </div>
     </div>
   )
 }
