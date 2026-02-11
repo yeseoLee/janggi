@@ -1,0 +1,21 @@
+.piece {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  /* pointer-events: none; - Handled in JS or irrelevant for now */
+  /* Transition for smooth rotation */
+  transition: transform 0.3s ease; 
+}
+
+.piece img {
+  width: 80%; /* Reduced from 90% */
+  height: 80%;
+  filter: drop-shadow(2px 2px 2px rgba(0,0,0,0.3));
+}
+
+.piece.wang img {
+  width: 100%; /* Make King larger */
+  height: 100%;
+}

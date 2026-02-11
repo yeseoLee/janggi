@@ -1,0 +1,174 @@
+.janggi-board {
+  position: relative;
+  width: 500px;
+  height: 550px;
+  background-color: #e3c080;
+  border: 2px solid #5a3a22;
+  /* Centering */
+  margin: 20px auto; 
+  box-sizing: border-box;
+  overflow: visible;
+  /* Add shadowing for 3d effect */
+  box-shadow: 5px 5px 15px rgba(0,0,0,0.5);
+}
+
+.grid-container {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  position: absolute;
+  top: 0;
+  left: 0;
+  /* Increase padding to ensure pieces on edge don't clip */
+  padding: 40px; 
+  box-sizing: border-box;
+}
+
+/* ... grid-row, grid-cell existing ... */
+.grid-row {
+    display: flex;
+    flex: 1;
+}
+  
+.grid-cell {
+    flex: 1;
+    border-right: 1px solid #000;
+    border-bottom: 1px solid #000;
+}
+
+.grid-cell:last-child {
+    border-right: none;
+}
+  
+.grid-row:last-child .grid-cell {
+    border-bottom: none;
+}
+
+/* Update border box to match new padding */
+.grid-container::before {
+  content: '';
+  position: absolute;
+  top: 40px;
+  left: 40px;
+  right: 40px;
+  bottom: 40px;
+  border-top: 1px solid #000;
+  border-left: 1px solid #000;
+  pointer-events: none;
+}
+
+/* Update palace positioning based on padding */
+.palace-top {
+  top: 40px;
+  left: calc(50% - 50px + 0px); /* Adjust if cell size changes? */
+  /* Palace is 2 cells wide. 
+     Grid inner width = 500 - 80 = 420.
+     8 cols -> 52.5px per col.
+     Palace width = 105px.
+     Height = 550 - 80 = 470.
+     9 rows -> 52.2px per row.
+     Palace height = 104.4px.
+     We need to be precise or use % there too.
+     Let's use % for palace as well.
+  */
+  width: calc(100% - 80px); /* This is the grid width */
+  height: calc(100% - 80px); /* Grid height */
+  /* Wait, palace is specific 2x2 block. */
+}
+/* Re-doing Palace with % relative to grid area */
+.palace {
+    position: absolute;
+    /* 2 units wide out of 8 units total width */
+    width: 25%; 
+    /* 2 units high out of 9 units total height */
+    height: 22.222%; 
+    pointer-events: none;
+}
+
+.palace-top {
+    top: 40px;
+    left: 50%;
+    transform: translateX(-50%);
+}
+
+.palace-bottom {
+    bottom: 40px;
+    left: 50%;
+    transform: translateX(-50%);
+}
+
+.piece-layer {
+  position: absolute;
+  top: 40px; /* Match padding */
+  left: 40px;
+  right: 40px;
+  bottom: 40px;
+  /* Reduce size to match the GRID LINES exactly */
+  /* Pieces are positioned relative to this box */
+  /* Remove grid display, use absolute positioning for children */
+  display: block; 
+  pointer-events: none;
+}
+
+/* Generic child rule removed as specific interaction-cell rule handles it */
+
+.interaction-cell {
+  /* Base style for content */
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  cursor: pointer;
+}
+
+/* Enforce values even if interaction-cell class is used */
+.piece-layer .interaction-cell {
+  position: absolute; /* Force absolute positioning */
+  width: 45px; 
+  height: 45px;
+  /* Center the cell on its coordinate */
+  transform: translate(-50%, -50%);
+  z-index: 10;
+  pointer-events: auto; /* Enable clicks! */
+}
+
+.interaction-cell.selected {
+  background-color: rgba(255, 255, 0, 0.3);
+  border-radius: 50%;
+}
+
+.move-marker {
+  width: 12px;
+  height: 12px;
+  background-color: rgba(0, 255, 0, 0.6);
+  border-radius: 50%;
+  position: absolute;
+  z-index: 20;
+  pointer-events: none;
+}
+
+.interaction-cell:hover {
+  cursor: pointer;
+}
+
+.piece-layer.rotated-view {
+  transform: rotate(180deg);
+}
+
+.piece-layer.rotated-view .interaction-cell {
+  transform: rotate(180deg); /* Counter-rotate cells so pieces stay upright? */
+}
+/* If useRotatedPieces is used, we might want to NOT counter-rotate those specific pieces? */
+/* Actually, interaction-cell is the container. If we rotate that, the piece rotates. */
+/* Just rotate the whole board container? */
+
+.janggi-board.rotated-view .grid-container,
+.janggi-board.rotated-view .piece-layer {
+   transform: rotate(180deg);
+}
+/* Wait, if I rotate piece-layer, grid lines remain unrotated if I don't rotate grid-container. */
+
+/* Counter-rotate pieces in rotated view so they stay upright */
+.piece-layer.rotated-view .piece {
+  transform: rotate(180deg);
+}
