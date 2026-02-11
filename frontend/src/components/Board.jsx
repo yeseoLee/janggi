@@ -153,30 +153,6 @@ const Board = ({
   };
 
   return (
-    <div className="janggi-board-container">
-        {/* Score Display */}
-        <div className="score-board">
-            <div className="score-item cho">
-                <span className="team-name">Cho (Blue)</span>: {scores.cho}
-            </div>
-            <div className="score-item han">
-                <span className="team-name">Han (Red)</span>: {scores.han}
-            </div>
-        </div>
-
-        {/* Game Info & Controls */}
-        <div className="game-status-bar">
-             <div className="turn-indicator">
-                 Current Turn: <span style={{ color: turn === TEAM.CHO ? 'blue' : 'red', fontWeight: 'bold' }}>{turn.toUpperCase()}</span>
-             </div>
-             
-             <div className="game-controls">
-                 <button onClick={handleReset}>Reset</button>
-                 <button onClick={handleUndo} disabled={history.length === 0}>Undo</button>
-                 <button onClick={handlePass}>Pass</button>
-             </div>
-        </div>
-    </div>
         <div className="janggi-board">
           {/* Winner Overlay */}
           {winner && (
