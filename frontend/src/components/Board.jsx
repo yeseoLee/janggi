@@ -11,10 +11,9 @@ import './Board.css';
 
 const socket = io('/', { autoConnect: false }); // Connect manually
 const createEmptyBoard = () => Array.from({ length: 10 }, () => Array(9).fill(null));
-const AI_PLAYER_TEAM = TEAM.CHO;
-const AI_ENGINE_TEAM = TEAM.HAN;
 const AI_THINK_DELAY_MS = 220;
 const AI_MOVE_TIME_MS = 700;
+const getOpposingTeam = (team) => (team === TEAM.CHO ? TEAM.HAN : TEAM.CHO);
 
 const cloneBoardState = (boardState) =>
   boardState.map((row) => row.map((piece) => (piece ? { ...piece } : null)));
@@ -60,6 +59,7 @@ const Board = ({
   const ranks = 10;
   
   // Game States
+  // IDLE -> MATCHING -> (AI) SELECT_SIDE -> SETUP_HAN/SETUP_CHO -> PLAYING
   // IDLE -> MATCHING -> (Online) SETUP_HAN / WAITING_HAN -> SETUP_CHO / WAITING_CHO -> PLAYING
   const [gameState, setGameState] = useState('IDLE'); 
   const [hanSetup, setHanSetup] = useState(null);
@@ -83,6 +83,7 @@ const Board = ({
   const [scores, setScores] = useState({ cho: 72, han: 73.5 }); 
   const [aiThinking, setAiThinking] = useState(false);
   const aiThinkingRef = useRef(false);
+  const aiEngineTeam = myTeam ? getOpposingTeam(myTeam) : null;
 
   // Replay State
   const [replayStep, setReplayStep] = useState(0); 
@@ -208,12 +209,11 @@ const Board = ({
             socket.disconnect();
         };
     } else if (gameMode === 'ai') {
-        const hanAiSetup = pickRandomSetup();
         setRoom(null);
         setOpponentInfo(null);
-        setMyTeam(AI_PLAYER_TEAM);
-        myTeamRef.current = AI_PLAYER_TEAM;
-        setHanSetup(hanAiSetup);
+        setMyTeam(null);
+        myTeamRef.current = null;
+        setHanSetup(null);
         setChoSetup(null);
         setBoard(createEmptyBoard());
         setTurn(TEAM.CHO);
@@ -224,7 +224,7 @@ const Board = ({
         setScores({ cho: 72, han: 73.5 });
         setAiThinking(false);
         aiThinkingRef.current = false;
-        setGameState('SETUP_CHO');
+        setGameState('SELECT_SIDE');
         setViewTeam?.(TEAM.CHO);
     } else {
         // Local mode fallback (manual two-side play)
@@ -239,6 +239,27 @@ const Board = ({
           startGame(hanSetup, choSetup);
       }
   }, [hanSetup, choSetup, gameMode, gameState]);
+
+  const handleAiSideSelect = (team) => {
+      if (gameMode !== 'ai' || gameState !== 'SELECT_SIDE') return;
+      if (team !== TEAM.CHO && team !== TEAM.HAN) return;
+
+      const aiSetup = pickRandomSetup();
+      setMyTeam(team);
+      myTeamRef.current = team;
+      setViewTeam?.(team);
+
+      if (team === TEAM.CHO) {
+          setHanSetup(aiSetup);
+          setChoSetup(null);
+          setGameState('SETUP_CHO');
+          return;
+      }
+
+      setChoSetup(aiSetup);
+      setHanSetup(null);
+      setGameState('SETUP_HAN');
+  };
 
 
   const handleSetupSelect = (type) => {
@@ -258,9 +279,16 @@ const Board = ({
       }
 
       if (gameMode === 'ai') {
-          if (gameState !== 'SETUP_CHO') return;
-          setChoSetup(type);
-          startGame(hanSetup || pickRandomSetup(), type);
+          if (gameState === 'SETUP_CHO') {
+              setChoSetup(type);
+              startGame(hanSetup || pickRandomSetup(), type);
+              return;
+          }
+
+          if (gameState === 'SETUP_HAN') {
+              setHanSetup(type);
+              startGame(type, choSetup || pickRandomSetup());
+          }
           return;
       }
 
@@ -292,7 +320,8 @@ const Board = ({
   useEffect(() => {
     if (gameMode !== 'ai') return;
     if (gameState !== 'PLAYING' || winner) return;
-    if (turn !== AI_ENGINE_TEAM) return;
+    if (!myTeam || !aiEngineTeam) return;
+    if (turn !== aiEngineTeam) return;
     if (isCheck(board, turn) && isCheckmate(board, turn)) return;
     if (aiThinkingRef.current) return;
 
@@ -323,7 +352,7 @@ const Board = ({
         const legalTargets = movingPiece ? getSafeMoves(board, aiMove.from.r, aiMove.from.c) : [];
         const isLegal = legalTargets.some((move) => move.r === aiMove?.to?.r && move.c === aiMove?.to?.c);
 
-        if (!movingPiece || movingPiece.team !== AI_ENGINE_TEAM || !isLegal) {
+        if (!movingPiece || movingPiece.team !== aiEngineTeam || !isLegal) {
           throw new Error('AI returned an invalid move.');
         }
 
@@ -332,14 +361,14 @@ const Board = ({
         console.error('AI move failed. Falling back to local move picker.', err);
         if (cancelled) return;
 
-        const fallback = pickFallbackAiMove(board, AI_ENGINE_TEAM);
+        const fallback = pickFallbackAiMove(board, aiEngineTeam);
         if (fallback) {
           applyMove(fallback.from, fallback.to, false);
           return;
         }
 
-        if (isCheck(board, AI_ENGINE_TEAM)) {
-          setWinner(AI_PLAYER_TEAM);
+        if (isCheck(board, aiEngineTeam)) {
+          setWinner(myTeam);
         }
       } finally {
         aiThinkingRef.current = false;
@@ -357,7 +386,7 @@ const Board = ({
       aiThinkingRef.current = false;
       setAiThinking(false);
     };
-  }, [board, gameMode, gameState, turn, winner]);
+  }, [aiEngineTeam, board, gameMode, gameState, myTeam, turn, winner]);
 
     // ... useEffect for Check ...
   useEffect(() => {
@@ -386,7 +415,7 @@ const Board = ({
     if (gameState !== 'PLAYING' || winner) return;
     
     if (gameMode === 'online' && myTeam && turn !== myTeam) return;
-    if (gameMode === 'ai' && turn !== AI_PLAYER_TEAM) return;
+    if (gameMode === 'ai' && (!myTeam || turn !== myTeam)) return;
 
     if (selectedPos) {
       const isMove = validMoves.some(m => m.r === r && m.c === c);
@@ -402,7 +431,7 @@ const Board = ({
     const piece = board[r][c];
     if (piece && piece.team === turn) {
         if (gameMode === 'online' && myTeam && piece.team !== myTeam) return;
-        if (gameMode === 'ai' && piece.team !== AI_PLAYER_TEAM) return;
+        if (gameMode === 'ai' && (!myTeam || piece.team !== myTeam)) return;
 
       setSelectedPos({ r, c });
       const moves = getSafeMoves(board, r, c);
@@ -460,7 +489,7 @@ const Board = ({
 
   const handlePass = () => {
        if (winner) return;
-       if (gameMode === 'ai' && turn !== AI_PLAYER_TEAM) return;
+       if (gameMode === 'ai' && (!myTeam || turn !== myTeam)) return;
        // Check if passing is allowed (e.g. valid moves exist? optional rule)
        // For now allow pass
        setHistory(prev => [...prev, { board: cloneBoardState(board), turn }]);
@@ -541,7 +570,6 @@ const Board = ({
       })
       .filter(Boolean);
   };
-  const opponentHanSetupPieces = getSetupPieces(hanSetup);
   const getCapturedPieceList = (team) => {
     if (gameState !== 'PLAYING') return [];
 
@@ -567,6 +595,9 @@ const Board = ({
   };
   const choDeadPieces = getCapturedPieceList(TEAM.CHO);
   const hanDeadPieces = getCapturedPieceList(TEAM.HAN);
+  const setupTeam = gameState === 'SETUP_HAN' ? TEAM.HAN : TEAM.CHO;
+  const opponentSetupTeam = setupTeam === TEAM.HAN ? TEAM.CHO : TEAM.HAN;
+  const opponentSetupPieces = getSetupPieces(opponentSetupTeam === TEAM.HAN ? hanSetup : choSetup);
 
   return (
     <div className="janggi-game-container">
@@ -607,59 +638,84 @@ const Board = ({
               )}
 
               {/* Setup Overlay */}
-              {(gameState === 'SETUP_HAN' || gameState === 'SETUP_CHO') && (
+              {(gameState === 'SELECT_SIDE' || gameState === 'SETUP_HAN' || gameState === 'SETUP_CHO') && (
                    <div className="overlay setup-overlay">
-                       <h2>{gameState === 'SETUP_HAN' ? t('board.setupHanTitle') : t('board.setupChoTitle')}</h2>
-                       
-                       {/* Display Opponent's Choice if available */}
-                       {gameState === 'SETUP_CHO' && hanSetup && (
-                           <div className="opponent-setup-display">
-                               <div className="opponent-setup-preview">
-                                   {opponentHanSetupPieces.map((pType, idx) => (
-                                       <div key={`opponent-han-setup-${idx}`} className="setup-piece opponent-setup-piece">
-                                           <Piece
-                                               team={TEAM.HAN}
-                                               type={pType}
-                                               styleVariant={styleVariant}
-                                               inverted={invertColor}
-                                           />
-                                       </div>
-                                   ))}
-                               </div>
-                           </div>
-                       )}
-
-                       <div className="setup-options">
-                           {Object.entries(SETUP_TYPES).map(([key, label]) => {
-                               const setupTeam = gameState === 'SETUP_HAN' ? TEAM.HAN : TEAM.CHO;
-                               const setupLabelKey = `board.setupTypes.${key}`;
-                               const setupLabel = t(setupLabelKey) === setupLabelKey ? label : t(setupLabelKey);
-                               const pieces = getSetupPieces(key);
-                              
-                               return (
+                       {gameState === 'SELECT_SIDE' ? (
+                           <>
+                               <h2>{t('board.selectSideTitle')}</h2>
+                               <p>{t('board.selectSideSubtitle')}</p>
+                               <div className="side-select-options">
                                    <button
-                                       key={key}
-                                       onClick={() => handleSetupSelect(label)}
-                                       className="setup-btn"
-                                       aria-label={setupLabel}
-                                       title={setupLabel}
+                                       type="button"
+                                       className="side-select-btn cho"
+                                       onClick={() => handleAiSideSelect(TEAM.CHO)}
                                    >
-                                       <div className="setup-preview">
-                                           {pieces.map((pType, idx) => (
-                                               <div key={idx} className="setup-piece">
-                                                   <Piece 
-                                                       team={setupTeam} 
-                                                       type={pType} 
-                                                       styleVariant={styleVariant} 
-                                                       inverted={invertColor} 
+                                       <span className="side-select-team">{t('board.team.cho')}</span>
+                                       <span className="side-select-desc">{t('board.selectSideCho')}</span>
+                                   </button>
+                                   <button
+                                       type="button"
+                                       className="side-select-btn han"
+                                       onClick={() => handleAiSideSelect(TEAM.HAN)}
+                                   >
+                                       <span className="side-select-team">{t('board.team.han')}</span>
+                                       <span className="side-select-desc">{t('board.selectSideHan')}</span>
+                                   </button>
+                               </div>
+                           </>
+                       ) : (
+                           <>
+                               <h2>{gameState === 'SETUP_HAN' ? t('board.setupHanTitle') : t('board.setupChoTitle')}</h2>
+
+                               {opponentSetupPieces.length > 0 && (
+                                   <div className="opponent-setup-display">
+                                       <div className="opponent-setup-preview">
+                                           {opponentSetupPieces.map((pType, idx) => (
+                                               <div key={`opponent-setup-${idx}`} className="setup-piece opponent-setup-piece">
+                                                   <Piece
+                                                       team={opponentSetupTeam}
+                                                       type={pType}
+                                                       styleVariant={styleVariant}
+                                                       inverted={invertColor}
                                                    />
                                                </div>
                                            ))}
                                        </div>
-                                   </button>
-                               );
-                           })}
-                       </div>
+                                   </div>
+                               )}
+
+                               <div className="setup-options">
+                                   {Object.entries(SETUP_TYPES).map(([key, label]) => {
+                                       const setupLabelKey = `board.setupTypes.${key}`;
+                                       const setupLabel = t(setupLabelKey) === setupLabelKey ? label : t(setupLabelKey);
+                                       const pieces = getSetupPieces(key);
+                                      
+                                       return (
+                                           <button
+                                               key={key}
+                                               onClick={() => handleSetupSelect(label)}
+                                               className="setup-btn"
+                                               aria-label={setupLabel}
+                                               title={setupLabel}
+                                           >
+                                               <div className="setup-preview">
+                                                   {pieces.map((pType, idx) => (
+                                                       <div key={idx} className="setup-piece">
+                                                           <Piece 
+                                                               team={setupTeam} 
+                                                               type={pType} 
+                                                               styleVariant={styleVariant} 
+                                                               inverted={invertColor} 
+                                                           />
+                                                       </div>
+                                                   ))}
+                                               </div>
+                                           </button>
+                                       );
+                                   })}
+                               </div>
+                           </>
+                       )}
                    </div>
               )}
               
@@ -802,7 +858,7 @@ const Board = ({
                          <>
                             <button onClick={handleReset} disabled={gameMode === 'ai' && aiThinking}>{t('board.reset')}</button>
                             <button onClick={handleUndo} disabled={gameMode === 'ai' && aiThinking}>{t('board.undo')}</button>
-                            <button onClick={handlePass} disabled={gameMode === 'ai' && (aiThinking || turn !== AI_PLAYER_TEAM)}>{t('board.pass')}</button>
+                            <button onClick={handlePass} disabled={gameMode === 'ai' && (aiThinking || !myTeam || turn !== myTeam)}>{t('board.pass')}</button>
                          </>
                      )}
                  </div>
