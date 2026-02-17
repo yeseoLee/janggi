@@ -79,28 +79,30 @@ function MainMenu() {
     }
   };
 
+  if (!user) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12, padding: 50 }}>
+        <Link to="/login"><button>{t('menu.login')}</button></Link>
+        <Link to="/register"><button>{t('menu.register')}</button></Link>
+      </div>
+    );
+  }
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 30, padding: 50, position: 'relative' }}>
       <h1>{t('menu.title')}</h1>
-      
-      {user ? (
-          <div style={{ background: '#333', padding: 20, borderRadius: 8, width: 300, textAlign: 'left' }}>
-              <h3>{t('menu.welcome', { nickname: user.nickname })}</h3>
-              <p>{t('menu.rank', { rank: user.rank })}</p>
-              <p>{t('menu.record', { wins: user.wins, losses: user.losses })}</p>
-              <p>{t('menu.coins', { coins: user.coins })}</p>
-              <div style={{ display: 'flex', gap: 10, marginTop: 10 }}>
-                <button onClick={logout} style={{ fontSize: '0.8em', background: '#555' }}>{t('menu.logout')}</button>
-                <button onClick={handleWithdraw} style={{ fontSize: '0.8em', background: '#a00' }}>{t('menu.withdraw')}</button>
-                <button onClick={handleRechargeCoins} disabled={isRecharging} style={{ fontSize: '0.8em', background: '#d08700' }}>{t('menu.rechargeCoins')}</button>
-              </div>
-          </div>
-      ) : (
-          <div>
-              <Link to="/login"><button>{t('menu.login')}</button></Link>
-              <Link to="/register"><button style={{ marginLeft: 10 }}>{t('menu.register')}</button></Link>
-          </div>
-      )}
+
+      <div style={{ background: '#333', padding: 20, borderRadius: 8, width: 300, textAlign: 'left' }}>
+        <h3>{t('menu.welcome', { nickname: user.nickname })}</h3>
+        <p>{t('menu.rank', { rank: user.rank })}</p>
+        <p>{t('menu.record', { wins: user.wins, losses: user.losses })}</p>
+        <p>{t('menu.coins', { coins: user.coins })}</p>
+        <div style={{ display: 'flex', gap: 10, marginTop: 10 }}>
+          <button onClick={logout} style={{ fontSize: '0.8em', background: '#555' }}>{t('menu.logout')}</button>
+          <button onClick={handleWithdraw} style={{ fontSize: '0.8em', background: '#a00' }}>{t('menu.withdraw')}</button>
+          <button onClick={handleRechargeCoins} disabled={isRecharging} style={{ fontSize: '0.8em', background: '#d08700' }}>{t('menu.rechargeCoins')}</button>
+        </div>
+      </div>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 15, width: 250 }}>
           <button onClick={handleAiMatchStart} disabled={isStartingAi}>{t('menu.aiMatch')}</button>
