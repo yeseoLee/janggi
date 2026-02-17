@@ -462,10 +462,17 @@ const Board = ({
       // ... (keep handling undo)
       if (gameMode === 'online') return;
       if (history.length === 0) return;
-      const lastState = history[history.length - 1];
-      setBoard(lastState.board);
-      setTurn(lastState.turn);
-      setHistory(history.slice(0, -1));
+      let stepsToUndo = 1;
+      if (gameMode === 'ai' && myTeam && turn === myTeam && history.length >= 2) {
+          // AI의 응수까지 끝난 시점(내 차례)에서는 2수를 함께 무른다.
+          stepsToUndo = 2;
+      }
+      if (history.length < stepsToUndo) return;
+
+      const targetState = history[history.length - stepsToUndo];
+      setBoard(targetState.board);
+      setTurn(targetState.turn);
+      setHistory(history.slice(0, -stepsToUndo));
       setWinner(null);
       setSelectedPos(null);
       setValidMoves([]);
