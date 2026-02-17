@@ -10,6 +10,8 @@ require('dotenv').config();
 
 const app = express();
 const server = http.createServer(app);
+const AI_MATCH_ENTRY_COST = 1;
+const MANUAL_RECHARGE_COINS = 10;
 
 // Database Connection
 const pool = new Pool({
@@ -115,6 +117,57 @@ app.get('/api/user/me', authenticateToken, async (req, res) => {
     );
     if (result.rows.length === 0) return res.sendStatus(404);
     res.json(result.rows[0]);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Spend coins when entering an AI match.
+app.post('/api/coins/spend-ai-match', authenticateToken, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `UPDATE users
+       SET coins = coins - $2
+       WHERE id = $1
+         AND coins >= $2
+       RETURNING id, username, nickname, rank, wins, losses, coins, rank_wins, rank_losses`,
+      [req.user.id, AI_MATCH_ENTRY_COST],
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(400).json({ error: 'Not enough coins' });
+    }
+
+    res.json({
+      spent: AI_MATCH_ENTRY_COST,
+      user: result.rows[0],
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Temporary manual recharge endpoint (+10 coins).
+app.post('/api/coins/recharge', authenticateToken, async (req, res) => {
+  try {
+    // TODO(next): Require successful ad-view validation before payout.
+    // TODO(next): Add per-user daily recharge limit and persist usage counters.
+    const result = await pool.query(
+      `UPDATE users
+       SET coins = coins + $2
+       WHERE id = $1
+       RETURNING id, username, nickname, rank, wins, losses, coins, rank_wins, rank_losses`,
+      [req.user.id, MANUAL_RECHARGE_COINS],
+    );
+
+    if (result.rows.length === 0) return res.sendStatus(404);
+
+    res.json({
+      added: MANUAL_RECHARGE_COINS,
+      user: result.rows[0],
+    });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Server error' });
