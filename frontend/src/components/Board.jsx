@@ -146,9 +146,12 @@ const Board = ({
         socket.on('game_over', (data) => {
              setWinner(data.winner);
              if (data.type === 'resign') {
-               // Show resign toast only when opponent resigned.
                const myTeamCurrent = myTeamRef.current;
-               if (myTeamCurrent && data.winner === myTeamCurrent) {
+               const opponentResigned =
+                 myTeamCurrent &&
+                 ((data.resignedTeam && data.resignedTeam !== myTeamCurrent) ||
+                   (!data.resignedTeam && data.winner === myTeamCurrent));
+               if (opponentResigned) {
                  alert(tRef.current('board.alerts.opponentResigned'));
                }
                return;

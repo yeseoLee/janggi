@@ -413,7 +413,11 @@ io.on('connection', (socket) => {
       if (!resignTeam) return;
 
       const winnerTeam = getOpponentTeam(resignTeam);
-      io.to(data.room).emit('game_over', { winner: winnerTeam, type: 'resign' });
+      io.to(data.room).emit('game_over', {
+          winner: winnerTeam,
+          type: 'resign',
+          resignedTeam: resignTeam,
+      });
       processGameEnd(data.room, winnerTeam, 'resign');
   });
   
