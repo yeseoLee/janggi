@@ -82,6 +82,7 @@ function MainMenu() {
   if (!user) {
     return (
       <div style={{ width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12, padding: 50, textAlign: 'center' }}>
+        <h1 style={{ margin: 0 }}>{t('menu.titleSimple')}</h1>
         <Link to="/login"><button>{t('menu.login')}</button></Link>
         <Link to="/register"><button>{t('menu.register')}</button></Link>
       </div>

@@ -6,6 +6,7 @@ export const translations = {
       english: 'English',
     },
     menu: {
+      titleSimple: '장기',
       title: '장기 온라인',
       welcome: '{{nickname}}님, 환영합니다',
       rank: '랭크: {{rank}}',
@@ -128,6 +129,7 @@ export const translations = {
       english: 'English',
     },
     menu: {
+      titleSimple: 'Janggi',
       title: 'Janggi Online',
       welcome: 'Welcome, {{nickname}}',
       rank: 'Rank: {{rank}}',
