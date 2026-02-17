@@ -50,12 +50,16 @@ const Board = ({
 
   // Initialize Game Logic & Replay
   useEffect(() => {
-    if (gameMode === 'replay' && replayHistory && replayHistory.length > 0) {
-        setGameState('PLAYING');
-        // Load first step
-        setBoard(replayHistory[0].board);
-        setTurn(replayHistory[0].turn);
-        setReplayStep(0);
+    if (gameMode === 'replay') {
+        if (replayHistory && replayHistory.length > 0) {
+            setGameState('PLAYING');
+            // Load first step
+            setBoard(replayHistory[0].board);
+            setTurn(replayHistory[0].turn);
+            setReplayStep(0);
+        } else {
+            setGameState('IDLE');
+        }
         return;
     }
 
@@ -198,6 +202,7 @@ const Board = ({
 
   // Handle cell click
   const handleCellClick = (r, c) => {
+    if (gameMode === 'replay') return;
     if (gameState !== 'PLAYING' || winner) return;
     
     if (gameMode === 'online' && myTeam && turn !== myTeam) return;
@@ -314,6 +319,7 @@ const Board = ({
   };
 
   const modeLabel = gameMode === 'online' ? '온라인 대국' : gameMode === 'replay' ? '복기 모드' : '연습 대국';
+  const displayMoveCount = gameMode === 'replay' ? Math.max((replayHistory?.length || 1) - 1, 0) : history.length;
 
   return (
     <div className="janggi-game-container">
@@ -337,7 +343,7 @@ const Board = ({
         <div className="janggi-board-area">
             <div className="match-header">
                 <span className="match-title">{modeLabel}</span>
-                <span className="move-count">{history.length}수</span>
+                <span className="move-count">{displayMoveCount}수</span>
             </div>
 
             <div className="janggi-board">

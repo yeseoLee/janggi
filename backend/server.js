@@ -140,10 +140,29 @@ const initDB = async () => {
                 loser_id INTEGER REFERENCES users(id),
                 winner_team VARCHAR(10),
                 loser_team VARCHAR(10),
-                moves TEXT, -- JSON string of move history (Gibo)
+                moves TEXT, -- backward compatibility payload
+                cho_setup VARCHAR(50),
+                han_setup VARCHAR(50),
+                move_log JSONB,
+                result_type VARCHAR(20),
+                move_count INTEGER DEFAULT 0,
+                started_at TIMESTAMP,
+                ended_at TIMESTAMP,
                 played_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
         `);
+        // Forward-only, idempotent migration for existing installations.
+        await pool.query(`ALTER TABLE games ADD COLUMN IF NOT EXISTS cho_setup VARCHAR(50);`);
+        await pool.query(`ALTER TABLE games ADD COLUMN IF NOT EXISTS han_setup VARCHAR(50);`);
+        await pool.query(`ALTER TABLE games ADD COLUMN IF NOT EXISTS move_log JSONB;`);
+        await pool.query(`ALTER TABLE games ADD COLUMN IF NOT EXISTS result_type VARCHAR(20);`);
+        await pool.query(`ALTER TABLE games ADD COLUMN IF NOT EXISTS move_count INTEGER DEFAULT 0;`);
+        await pool.query(`ALTER TABLE games ADD COLUMN IF NOT EXISTS started_at TIMESTAMP;`);
+        await pool.query(`ALTER TABLE games ADD COLUMN IF NOT EXISTS ended_at TIMESTAMP;`);
+
+        await pool.query(`CREATE INDEX IF NOT EXISTS idx_games_played_at ON games (played_at DESC);`);
+        await pool.query(`CREATE INDEX IF NOT EXISTS idx_games_move_count ON games (move_count DESC);`);
+
         console.log("DB: Games table checked/created");
     } catch (err) {
         console.error("DB Init Error:", err);
@@ -175,8 +194,39 @@ function getWinRate(user) {
     return (user.wins / total);
 }
 
+const TEAM_CHO = 'cho';
+const TEAM_HAN = 'han';
+
+function isValidTeam(team) {
+    return team === TEAM_CHO || team === TEAM_HAN;
+}
+
+function getOpponentTeam(team) {
+    return team === TEAM_CHO ? TEAM_HAN : TEAM_CHO;
+}
+
+function isValidPosition(pos) {
+    return (
+        pos &&
+        Number.isInteger(pos.r) &&
+        Number.isInteger(pos.c) &&
+        pos.r >= 0 &&
+        pos.r < 10 &&
+        pos.c >= 0 &&
+        pos.c < 9
+    );
+}
+
+function getTeamBySocketId(game, socketId) {
+    if (!game) return null;
+    if (game.cho?.socketId === socketId) return TEAM_CHO;
+    if (game.han?.socketId === socketId) return TEAM_HAN;
+    return null;
+}
+
 // Game State Memory
-const activeGames = new Map(); // roomId -> { cho: {id, socketId}, han: {id, socketId}, history: [] }
+// roomId -> { cho, han, choSetup, hanSetup, moveLog, nextTurn, startTime, finished }
+const activeGames = new Map();
 
 // Socket.io Logic
 let matchQueue = [];
@@ -231,16 +281,15 @@ io.on('connection', (socket) => {
       activeGames.set(roomId, {
           cho: { id: choPlayer.userInfo.id, socketId: choPlayer.socket.id },
           han: { id: hanPlayer.userInfo.id, socketId: hanPlayer.socket.id },
-          startTime: new Date()
+          choSetup: null,
+          hanSetup: null,
+          moveLog: [],
+          nextTurn: TEAM_CHO,
+          startTime: new Date(),
+          finished: false,
       });
 
       console.log(`Match: [Cho] ${choPlayer.userInfo.nickname} vs [Han] ${hanPlayer.userInfo.nickname}`);
-
-      activeGames.set(roomId, {
-          cho: { id: choPlayer.userInfo.id, socketId: choPlayer.socket.id },
-          han: { id: hanPlayer.userInfo.id, socketId: hanPlayer.socket.id },
-          startTime: new Date()
-      });
 
       // Notify match found - Clients enters Setup Phase
       choPlayer.socket.emit('match_found', { room: roomId, team: 'cho', opponent: hanPlayer.userInfo });
@@ -251,61 +300,155 @@ io.on('connection', (socket) => {
   // Setup Sync
   socket.on('submit_setup', (data) => {
       // data: { room, team, setupType }
+      const game = activeGames.get(data.room);
+      if (game && isValidTeam(data.team)) {
+          if (data.team === TEAM_CHO) game.choSetup = data.setupType;
+          if (data.team === TEAM_HAN) game.hanSetup = data.setupType;
+      }
       // Relay to opponent
       socket.to(data.room).emit('opponent_setup', { team: data.team, setupType: data.setupType });
   });
 
   socket.on('move', (data) => {
+    const game = activeGames.get(data.room);
+    if (!game || game.finished) return;
+
+    const actorTeam = getTeamBySocketId(game, socket.id);
+    if (!actorTeam) return;
+    if (game.nextTurn !== actorTeam) return;
+    if (!data?.move || !isValidPosition(data.move.from) || !isValidPosition(data.move.to)) return;
+
+    game.moveLog.push({
+        type: 'move',
+        turn: actorTeam,
+        from: data.move.from,
+        to: data.move.to,
+        at: new Date().toISOString(),
+    });
+    game.nextTurn = getOpponentTeam(actorTeam);
+
     socket.to(data.room).emit('move', data.move);
-    // Optional: Store move in history in activeGames for Gibo consistency
   });
   
   socket.on('pass', (data) => {
+      const game = activeGames.get(data.room);
+      if (!game || game.finished) return;
+
+      const actorTeam = getTeamBySocketId(game, socket.id);
+      if (!actorTeam) return;
+      if (game.nextTurn !== actorTeam) return;
+
+      game.moveLog.push({
+          type: 'pass',
+          turn: actorTeam,
+          at: new Date().toISOString(),
+      });
+      game.nextTurn = getOpponentTeam(actorTeam);
+
       socket.to(data.room).emit('pass_turn');
   });
   
   socket.on('resign', (data) => {
-      const winnerTeam = data.team === 'cho' ? 'han' : 'cho';
+      const game = activeGames.get(data.room);
+      if (!game || game.finished) return;
+
+      const resignTeam = getTeamBySocketId(game, socket.id);
+      if (!resignTeam) return;
+
+      const winnerTeam = getOpponentTeam(resignTeam);
       io.to(data.room).emit('game_over', { winner: winnerTeam, type: 'resign' });
-      processGameEnd(data.room, winnerTeam, data.history);
+      processGameEnd(data.room, winnerTeam, 'resign');
   });
   
   socket.on('checkmate', (data) => {
+      const game = activeGames.get(data.room);
+      if (!game || game.finished || !isValidTeam(data.winner)) return;
+
+      const senderTeam = getTeamBySocketId(game, socket.id);
+      if (!senderTeam) return;
+
+      const expectedWinner = getOpponentTeam(game.nextTurn);
+      if (data.winner !== expectedWinner) return;
+      if (senderTeam !== game.nextTurn && senderTeam !== expectedWinner) return;
+
       io.to(data.room).emit('game_over', { winner: data.winner, type: 'checkmate' });
-      processGameEnd(data.room, data.winner, data.history);
+      processGameEnd(data.room, data.winner, 'checkmate');
   });
 
   socket.on('disconnect', () => {
     // Handle disconnection
     matchQueue = matchQueue.filter(u => u.socket.id !== socket.id);
-    // If in game, logic (optional MVP: Auto resign?)
+
+    for (const [roomId, game] of activeGames.entries()) {
+        const disconnectedTeam = getTeamBySocketId(game, socket.id);
+        if (!disconnectedTeam || game.finished) continue;
+
+        const winnerTeam = getOpponentTeam(disconnectedTeam);
+        io.to(roomId).emit('game_over', { winner: winnerTeam, type: 'disconnect' });
+        processGameEnd(roomId, winnerTeam, 'disconnect');
+        break;
+    }
   });
 });
 
-async function processGameEnd(roomId, winnerTeam, history) {
+async function processGameEnd(roomId, winnerTeam, resultType = 'unknown') {
     const game = activeGames.get(roomId);
-    if (!game) return;
+    if (!game || game.finished || !isValidTeam(winnerTeam)) return;
+    game.finished = true;
 
-    const winnerId = winnerTeam === 'cho' ? game.cho.id : game.han.id;
-    const loserId = winnerTeam === 'cho' ? game.han.id : game.cho.id;
-    const winnerRole = winnerTeam;
-    const loserRole = winnerTeam === 'cho' ? 'han' : 'cho';
+    const winnerId = winnerTeam === TEAM_CHO ? game.cho.id : game.han.id;
+    const loserId = winnerTeam === TEAM_CHO ? game.han.id : game.cho.id;
+    const loserTeam = getOpponentTeam(winnerTeam);
 
+    const moveLog = Array.isArray(game.moveLog) ? game.moveLog : [];
+    const replayPayload = {
+        version: 2,
+        choSetup: game.choSetup,
+        hanSetup: game.hanSetup,
+        moveLog,
+    };
+    const startedAt = game.startTime || new Date();
+    const endedAt = new Date();
+
+    const client = await pool.connect();
     try {
+        await client.query('BEGIN');
+
         // Update Stats
-        await pool.query('UPDATE users SET wins = wins + 1, coins = coins + 5 WHERE id = $1', [winnerId]);
-        await pool.query('UPDATE users SET losses = losses + 1 WHERE id = $1', [loserId]);
-        
+        await client.query('UPDATE users SET wins = wins + 1, coins = coins + 5 WHERE id = $1', [winnerId]);
+        await client.query('UPDATE users SET losses = losses + 1 WHERE id = $1', [loserId]);
+
         // Save Game Record
-        await pool.query(
-            'INSERT INTO games (winner_id, loser_id, winner_team, loser_team, moves) VALUES ($1, $2, $3, $4, $5)',
-            [winnerId, loserId, winnerRole, loserRole, JSON.stringify(history)]
+        await client.query(
+            `INSERT INTO games (
+                winner_id, loser_id, winner_team, loser_team,
+                moves, cho_setup, han_setup, move_log, result_type, move_count, started_at, ended_at
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10, $11, $12)`,
+            [
+                winnerId,
+                loserId,
+                winnerTeam,
+                loserTeam,
+                JSON.stringify(replayPayload), // backward compatibility
+                game.choSetup,
+                game.hanSetup,
+                JSON.stringify(moveLog),
+                resultType,
+                moveLog.length,
+                startedAt,
+                endedAt,
+            ]
         );
-        console.log(`Game ${roomId} ended. Winner: ${winnerId}, Saved to DB.`);
-        
+
+        await client.query('COMMIT');
+        console.log(`Game ${roomId} ended. Winner: ${winnerId}, saved ${moveLog.length} ply.`);
         activeGames.delete(roomId);
     } catch (err) {
+        await client.query('ROLLBACK');
+        game.finished = false;
         console.error("Error processing game end:", err);
+    } finally {
+        client.release();
     }
 }
 
@@ -314,11 +457,29 @@ async function processGameEnd(roomId, winnerTeam, history) {
 app.get('/api/games', async (req, res) => {
     try {
         const result = await pool.query(`
-            SELECT g.id, g.played_at, g.winner_team, g.loser_team,
-                   u1.nickname as winner_name, u2.nickname as loser_name
+            SELECT
+                g.id,
+                g.played_at,
+                g.started_at,
+                g.ended_at,
+                g.winner_team,
+                g.loser_team,
+                COALESCE(g.result_type, 'unknown') AS result_type,
+                COALESCE(
+                    g.move_count,
+                    CASE
+                        WHEN g.move_log IS NOT NULL AND jsonb_typeof(g.move_log) = 'array'
+                            THEN jsonb_array_length(g.move_log)
+                        ELSE 0
+                    END
+                ) AS move_count,
+                u1.nickname AS winner_name,
+                u2.nickname AS loser_name,
+                CASE WHEN g.winner_team = 'cho' THEN u1.nickname ELSE u2.nickname END AS cho_name,
+                CASE WHEN g.winner_team = 'han' THEN u1.nickname ELSE u2.nickname END AS han_name
             FROM games g
-            JOIN users u1 ON g.winner_id = u1.id
-            JOIN users u2 ON g.loser_id = u2.id
+            LEFT JOIN users u1 ON g.winner_id = u1.id
+            LEFT JOIN users u2 ON g.loser_id = u2.id
             ORDER BY g.played_at DESC
             LIMIT 50
         `);
@@ -332,16 +493,43 @@ app.get('/api/games', async (req, res) => {
 app.get('/api/games/:id', async (req, res) => {
     try {
         const result = await pool.query(`
-            SELECT g.*, 
-                   u1.nickname as winner_name, u2.nickname as loser_name
+            SELECT
+                g.*,
+                u1.nickname AS winner_name,
+                u2.nickname AS loser_name,
+                CASE WHEN g.winner_team = 'cho' THEN u1.nickname ELSE u2.nickname END AS cho_name,
+                CASE WHEN g.winner_team = 'han' THEN u1.nickname ELSE u2.nickname END AS han_name
             FROM games g
-            JOIN users u1 ON g.winner_id = u1.id
-            JOIN users u2 ON g.loser_id = u2.id
+            LEFT JOIN users u1 ON g.winner_id = u1.id
+            LEFT JOIN users u2 ON g.loser_id = u2.id
             WHERE g.id = $1
         `, [req.params.id]);
         
         if (result.rows.length === 0) return res.status(404).json({ error: 'Game not found' });
-        res.json(result.rows[0]);
+        const game = result.rows[0];
+
+        // Backfill new fields from legacy moves payload if this is an old record.
+        if ((!Array.isArray(game.move_log) || game.move_log.length === 0) && game.moves) {
+            try {
+                const parsed = JSON.parse(game.moves);
+                if (parsed && parsed.version === 2 && Array.isArray(parsed.moveLog)) {
+                    game.move_log = parsed.moveLog;
+                    game.cho_setup = game.cho_setup || parsed.choSetup;
+                    game.han_setup = game.han_setup || parsed.hanSetup;
+                    game.move_count = game.move_count || parsed.moveLog.length;
+                } else if (Array.isArray(parsed) && parsed.length > 0 && Array.isArray(parsed[0].board)) {
+                    game.move_count = game.move_count || Math.max(parsed.length - 1, 0);
+                }
+            } catch (_err) {
+                // Keep legacy data as-is; frontend can still parse old frame arrays from `moves`.
+            }
+        }
+
+        if (game.move_count == null) {
+            game.move_count = Array.isArray(game.move_log) ? game.move_log.length : 0;
+        }
+
+        res.json(game);
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: 'DB Error' });

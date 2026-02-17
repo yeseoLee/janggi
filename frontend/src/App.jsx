@@ -4,6 +4,8 @@ import Login from './pages/Login';
 import Register from './pages/Register';
 import MainMenu from './pages/MainMenu';
 import GamePage from './pages/GamePage';
+import ReplayList from './pages/ReplayList';
+import ReplayPage from './pages/ReplayPage';
 import './App.css';
 
 // Protected Route Component
@@ -30,8 +32,8 @@ function App() {
                             <GamePage />
                         </ProtectedRoute>
                     } />
-                    {/* Placeholder for Replay */}
-                    <Route path="/replay" element={<div>Replay Feature Coming Soon</div>} />
+                    <Route path="/replay" element={<ReplayList />} />
+                    <Route path="/replay/:id" element={<ReplayPage />} />
                 </Routes>
             </div>
         </BrowserRouter>
