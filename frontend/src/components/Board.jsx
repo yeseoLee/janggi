@@ -18,12 +18,6 @@ const getOpposingTeam = (team) => (team === TEAM.CHO ? TEAM.HAN : TEAM.CHO);
 const cloneBoardState = (boardState) =>
   boardState.map((row) => row.map((piece) => (piece ? { ...piece } : null)));
 
-const pickRandomSetup = () => {
-  const setupValues = Object.values(SETUP_TYPES);
-  if (setupValues.length === 0) return SETUP_TYPES.MSMS;
-  return setupValues[Math.floor(Math.random() * setupValues.length)];
-};
-
 const pickFallbackAiMove = (boardState, team) => {
   for (let r = 0; r < 10; r += 1) {
     for (let c = 0; c < 9; c += 1) {
@@ -59,7 +53,7 @@ const Board = ({
   const ranks = 10;
   
   // Game States
-  // IDLE -> MATCHING -> (AI) SELECT_SIDE -> SETUP_HAN/SETUP_CHO -> PLAYING
+  // IDLE -> MATCHING -> (AI) SELECT_SIDE -> SETUP_HAN/SETUP_CHO -> SETUP_HAN/SETUP_CHO -> PLAYING
   // IDLE -> MATCHING -> (Online) SETUP_HAN / WAITING_HAN -> SETUP_CHO / WAITING_CHO -> PLAYING
   const [gameState, setGameState] = useState('IDLE'); 
   const [hanSetup, setHanSetup] = useState(null);
@@ -244,21 +238,12 @@ const Board = ({
       if (gameMode !== 'ai' || gameState !== 'SELECT_SIDE') return;
       if (team !== TEAM.CHO && team !== TEAM.HAN) return;
 
-      const aiSetup = pickRandomSetup();
       setMyTeam(team);
       myTeamRef.current = team;
       setViewTeam?.(team);
-
-      if (team === TEAM.CHO) {
-          setHanSetup(aiSetup);
-          setChoSetup(null);
-          setGameState('SETUP_CHO');
-          return;
-      }
-
-      setChoSetup(aiSetup);
       setHanSetup(null);
-      setGameState('SETUP_HAN');
+      setChoSetup(null);
+      setGameState(team === TEAM.HAN ? 'SETUP_HAN' : 'SETUP_CHO');
   };
 
 
@@ -279,16 +264,18 @@ const Board = ({
       }
 
       if (gameMode === 'ai') {
-          if (gameState === 'SETUP_CHO') {
-              setChoSetup(type);
-              startGame(hanSetup || pickRandomSetup(), type);
+          const nextHanSetup = gameState === 'SETUP_HAN' ? type : hanSetup;
+          const nextChoSetup = gameState === 'SETUP_CHO' ? type : choSetup;
+
+          if (gameState === 'SETUP_HAN') setHanSetup(type);
+          if (gameState === 'SETUP_CHO') setChoSetup(type);
+
+          if (!nextHanSetup || !nextChoSetup) {
+              setGameState(nextHanSetup ? 'SETUP_CHO' : 'SETUP_HAN');
               return;
           }
 
-          if (gameState === 'SETUP_HAN') {
-              setHanSetup(type);
-              startGame(type, choSetup || pickRandomSetup());
-          }
+          startGame(nextHanSetup, nextChoSetup);
           return;
       }
 
@@ -598,6 +585,8 @@ const Board = ({
   const setupTeam = gameState === 'SETUP_HAN' ? TEAM.HAN : TEAM.CHO;
   const opponentSetupTeam = setupTeam === TEAM.HAN ? TEAM.CHO : TEAM.HAN;
   const opponentSetupPieces = getSetupPieces(opponentSetupTeam === TEAM.HAN ? hanSetup : choSetup);
+  const isAiSetupPhase = gameMode === 'ai' && gameState !== 'SELECT_SIDE';
+  const isSelectingAiSetup = isAiSetupPhase && myTeam && setupTeam !== myTeam;
 
   return (
     <div className="janggi-game-container">
@@ -666,6 +655,9 @@ const Board = ({
                        ) : (
                            <>
                                <h2>{gameState === 'SETUP_HAN' ? t('board.setupHanTitle') : t('board.setupChoTitle')}</h2>
+                               {isAiSetupPhase && (
+                                   <p>{isSelectingAiSetup ? t('board.setupAiSubtitle') : t('board.setupMySubtitle')}</p>
+                               )}
 
                                {opponentSetupPieces.length > 0 && (
                                    <div className="opponent-setup-display">
