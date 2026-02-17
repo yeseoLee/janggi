@@ -313,6 +313,8 @@ const Board = ({
       }
   };
 
+  const modeLabel = gameMode === 'online' ? '온라인 대국' : gameMode === 'replay' ? '복기 모드' : '연습 대국';
+
   return (
     <div className="janggi-game-container">
         {/* MATCHING OVERLAY */}
@@ -333,6 +335,11 @@ const Board = ({
         )}
 
         <div className="janggi-board-area">
+            <div className="match-header">
+                <span className="match-title">{modeLabel}</span>
+                <span className="move-count">{history.length}수</span>
+            </div>
+
             <div className="janggi-board">
               {/* Winner Overlay */}
               {winner && (
@@ -448,7 +455,10 @@ const Board = ({
         </div>
 
         <div className="janggi-sidebar">
-            <button className="home-btn" onClick={() => navigate('/')}>🏠 Home</button>
+            <div className="sidebar-top-row">
+                <button className="home-btn" onClick={() => navigate('/')}>Home</button>
+                <span className="mode-chip">{modeLabel}</span>
+            </div>
 
             <div className="score-board">
                 <div className="score-item cho">Cho: {scores.cho}</div>
@@ -457,14 +467,17 @@ const Board = ({
 
             <div className="game-status-bar">
                  <div className="turn-indicator">
-                     Turn: <span style={{ color: turn === TEAM.CHO ? 'blue' : 'red' }}>{turn.toUpperCase()}</span>
+                     Turn: <span className={turn === TEAM.CHO ? 'turn-team cho' : 'turn-team han'}>{turn.toUpperCase()}</span>
                  </div>
+
+                 {gameMode === 'replay' && (
+                    <div className="replay-step">Step: {replayStep + 1} / {replayHistory?.length}</div>
+                 )}
                  
                  <div className="game-controls">
                      {gameMode === 'replay' ? (
                          <>
                             <button onClick={handleReplayPrev} disabled={replayStep === 0}>Prev</button>
-                            <span style={{color:'white'}}>Step: {replayStep + 1} / {replayHistory?.length}</span>
                             <button onClick={handleReplayNext} disabled={!replayHistory || replayStep === replayHistory.length - 1}>Next</button>
                          </>
                      ) : gameMode === 'online' ? (
@@ -483,18 +496,15 @@ const Board = ({
             </div>
             
             <div className="settings-controls">
-                <div className="control-row">
+                <div className="control-row select-row">
+                   <span className="control-label">View</span>
                    <select value={viewTeam} onChange={(e) => setViewTeam(e.target.value)}>
-                      <option value={TEAM.CHO}>View: Cho</option>
-                      <option value={TEAM.HAN}>View: Han</option>
+                      <option value={TEAM.CHO}>Cho</option>
+                      <option value={TEAM.HAN}>Han</option>
                     </select>
                 </div>
-                <div className="control-row">
-                    <label style={{color:'white'}}><input type="checkbox" checked={invertColor} onChange={(e) => setInvertColor(e.target.checked)} /> Invert Piece Color</label>
-                </div>
-                <div className="control-row">
-                    <label style={{color:'white'}}><input type="checkbox" checked={useRotatedPieces} onChange={(e) => setUseRotatedPieces(e.target.checked)} /> Rotate Opponent Pieces</label>
-                </div>
+                <label className="control-row toggle-row"><input type="checkbox" checked={invertColor} onChange={(e) => setInvertColor(e.target.checked)} /> Invert Piece Color</label>
+                <label className="control-row toggle-row"><input type="checkbox" checked={useRotatedPieces} onChange={(e) => setUseRotatedPieces(e.target.checked)} /> Rotate Opponent Pieces</label>
             </div>
         </div>
     </div>

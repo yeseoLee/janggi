@@ -1,18 +1,72 @@
+.janggi-game-container {
+  position: relative;
+  width: 100%;
+  min-height: 100vh;
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 24px;
+  box-sizing: border-box;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 28px;
+  flex-wrap: wrap;
+  background: radial-gradient(circle at top, #3d4149 0%, #1f2127 58%, #17191f 100%);
+}
+
+.janggi-board-area {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+.match-header {
+  width: min(78vmin, 760px);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 18px;
+  box-sizing: border-box;
+  border-radius: 14px;
+  background: rgba(15, 16, 21, 0.74);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: #ececec;
+}
+
+.match-title {
+  font-size: 1.35rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.move-count {
+  font-size: 1.25rem;
+  font-weight: 800;
+  color: #ff9f2b;
+}
+
 .janggi-board {
   position: relative;
-  /* Fluid sizing */
-  width: 90vmin;
-  max-width: 800px; 
+  width: min(78vmin, 760px);
   aspect-ratio: 500 / 550;
-  height: auto;
-  background-color: #e3c080;
+  background: linear-gradient(140deg, #e7cb8f 0%, #dfbd76 55%, #d8b16a 100%);
   border: 2px solid #5a3a22;
-  /* Centering */
-  margin: 20px auto; 
+  border-radius: 8px;
   box-sizing: border-box;
-  overflow: visible;
-  /* Add shadowing for 3d effect */
-  box-shadow: 5px 5px 15px rgba(0,0,0,0.5);
+  overflow: hidden;
+  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.45);
+}
+
+.janggi-board::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.2;
+  background:
+    linear-gradient(90deg, transparent 0%, rgba(87, 61, 26, 0.35) 12%, transparent 28%, rgba(87, 61, 26, 0.25) 44%, transparent 62%, rgba(87, 61, 26, 0.32) 78%, transparent 100%);
 }
 
 .grid-container {
@@ -23,32 +77,29 @@
   position: absolute;
   top: 0;
   left: 0;
-  /* Percentage padding to scale with board */
-  padding: 8%; 
+  padding: 8%;
   box-sizing: border-box;
 }
 
-/* ... grid-row, grid-cell existing ... */
 .grid-row {
-    display: flex;
-    flex: 1;
+  display: flex;
+  flex: 1;
 }
-  
+
 .grid-cell {
-    flex: 1;
-    border-right: 1px solid #000;
-    border-bottom: 1px solid #000;
+  flex: 1;
+  border-right: 1px solid rgba(28, 18, 11, 0.9);
+  border-bottom: 1px solid rgba(28, 18, 11, 0.9);
 }
 
 .grid-cell:last-child {
-    border-right: none;
-}
-  
-.grid-row:last-child .grid-cell {
-    border-bottom: none;
+  border-right: none;
 }
 
-/* Update border box to match new padding */
+.grid-row:last-child .grid-cell {
+  border-bottom: none;
+}
+
 .grid-container::before {
   content: '';
   position: absolute;
@@ -56,84 +107,100 @@
   left: 8%;
   right: 8%;
   bottom: 8%;
-  border-top: 1px solid #000;
-  border-left: 1px solid #000;
+  border-top: 1px solid rgba(28, 18, 11, 0.9);
+  border-left: 1px solid rgba(28, 18, 11, 0.9);
   pointer-events: none;
 }
 
-/* Update palace positioning based on padding */
-/* Palace size: 2 cols out of 8 cols = 25% of inner width */
-/* Inner width is 100% - 16%. Palace width relative to board = 21% */
 .palace {
-    position: absolute;
-    /* 2/8 of inner width (84%) = 21% */
-    width: 21%; 
-    /* 2/9 of inner height (84%) ~= 18.66% */
-    height: 18.66%; 
-    pointer-events: none;
+  position: absolute;
+  width: 21%;
+  height: 18.66%;
+  pointer-events: none;
+}
+
+.palace::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(45deg, transparent calc(50% - 0.6px), rgba(28, 18, 11, 0.9) calc(50% - 0.6px), rgba(28, 18, 11, 0.9) calc(50% + 0.6px), transparent calc(50% + 0.6px)),
+    linear-gradient(-45deg, transparent calc(50% - 0.6px), rgba(28, 18, 11, 0.9) calc(50% - 0.6px), rgba(28, 18, 11, 0.9) calc(50% + 0.6px), transparent calc(50% + 0.6px));
 }
 
 .palace-top {
-    top: 8%;
-    left: 50%;
-    transform: translateX(-50%);
+  top: 8%;
+  left: 50%;
+  transform: translateX(-50%);
 }
 
 .palace-bottom {
-    bottom: 8%;
-    left: 50%;
-    transform: translateX(-50%);
+  bottom: 8%;
+  left: 50%;
+  transform: translateX(-50%);
 }
 
 .piece-layer {
   position: absolute;
-  top: 8%; 
+  top: 8%;
   left: 8%;
   right: 8%;
   bottom: 8%;
-  /* Reduce size to match the GRID LINES exactly */
-  /* Pieces are positioned relative to this box */
-  /* Remove grid display, use absolute positioning for children */
-  display: block; 
+  display: block;
   pointer-events: none;
 }
 
-/* Generic child rule removed as specific interaction-cell rule handles it */
-
 .interaction-cell {
-  /* Base style for content */
   display: flex;
   justify-content: center;
   align-items: center;
   cursor: pointer;
 }
 
-/* Enforce values even if interaction-cell class is used */
 .piece-layer .interaction-cell {
-  position: absolute; /* Force absolute positioning */
-  /* Responsive piece size: approx 10% of the inner grid width */
-  width: 11%; 
-  aspect-ratio: 1/1;
+  position: absolute;
+  width: 11%;
+  aspect-ratio: 1 / 1;
   height: auto;
-  /* Center the cell on its coordinate */
   transform: translate(-50%, -50%);
   z-index: 10;
-  pointer-events: auto; /* Enable clicks! */
+  pointer-events: auto;
 }
 
 .interaction-cell.selected {
-  background-color: rgba(255, 255, 0, 0.3);
+  background-color: rgba(255, 225, 0, 0.28);
   border-radius: 50%;
 }
 
 .move-marker {
-  width: 30%; /* Relative to cell */
-  height: 30%;
-  background-color: rgba(0, 255, 0, 0.6);
+  width: 38%;
+  aspect-ratio: 1 / 1;
   border-radius: 50%;
-  position: absolute;
+  position: relative;
   z-index: 20;
   pointer-events: none;
+  background: radial-gradient(circle at 30% 30%, #fff5eb 10%, #ff6d3a 44%, #ce3112 100%);
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.8);
+}
+
+.move-marker::before,
+.move-marker::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 52%;
+  height: 2px;
+  background: rgba(255, 255, 255, 0.95);
+  transform-origin: center;
+}
+
+.move-marker::before {
+  transform: translate(-50%, -50%) rotate(45deg);
+}
+
+.move-marker::after {
+  transform: translate(-50%, -50%) rotate(-45deg);
 }
 
 .interaction-cell:hover {
@@ -145,41 +212,37 @@
 }
 
 .piece-layer.rotated-view .interaction-cell {
-  transform: rotate(180deg); /* Counter-rotate cells so pieces stay upright? */
+  transform: rotate(180deg);
 }
-/* If useRotatedPieces is used, we might want to NOT counter-rotate those specific pieces? */
-/* Actually, interaction-cell is the container. If we rotate that, the piece rotates. */
-/* Just rotate the whole board container? */
 
 .janggi-board.rotated-view .grid-container,
 .janggi-board.rotated-view .piece-layer {
-   transform: rotate(180deg);
+  transform: rotate(180deg);
 }
-/* Wait, if I rotate piece-layer, grid lines remain unrotated if I don't rotate grid-container. */
 
-/* Counter-rotate pieces in rotated view so they stay upright */
 .piece-layer.rotated-view .piece {
   transform: rotate(180deg);
 }
 
-/* --- Overlays & Notifications --- */
-
 .overlay {
-    position: absolute;
-    top: 0; left: 0; width: 100%; height: 100%;
-    background: rgba(0, 0, 0, 0.85);
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    align-items: center;
-    color: white;
-    font-size: 2em;
-    z-index: 100;
-    border-radius: 4px;
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.85);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  color: #ffffff;
+  font-size: 2em;
+  z-index: 100;
+  border-radius: 8px;
 }
 
 .winner-overlay > div {
-    margin-bottom: 20px;
+  margin-bottom: 20px;
 }
 
 .check-alert {
@@ -187,212 +250,359 @@
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  color: red;
-  font-size: 3em;
+  color: #ff3333;
+  font-size: 2.8em;
   font-weight: bold;
-  text-shadow: 2px 2px 5px black;
+  text-shadow: 2px 2px 7px #000000;
   z-index: 90;
   pointer-events: none;
   animation: flash 2s infinite;
 }
 
 @keyframes flash {
-  0% { opacity: 1; }
-  50% { opacity: 0; }
-  100% { opacity: 1; }
+  0% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 1;
+  }
 }
-
-/* --- Score Board --- */
 
 .score-board {
   display: flex;
-  gap: 40px;
-  background: rgba(0,0,0,0.3);
-  padding: 10px 30px;
-  border-radius: 8px;
-  font-size: 1.2em;
-  font-weight: bold;
-  margin-top: 10px;
-  justify-content: center;
+  justify-content: space-between;
+  gap: 12px;
+  background: rgba(12, 13, 17, 0.78);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 14px;
+  padding: 14px;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.28);
 }
 
-.score-item.cho { color: #5078f2; }
-.score-item.han { color: #f25050; }
+.score-item {
+  flex: 1;
+  text-align: center;
+  font-size: 1.05rem;
+  font-weight: 700;
+  padding: 8px 6px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.06);
+}
 
-/* --- Setup UI --- */
+.score-item.cho {
+  color: #5f90ff;
+}
+
+.score-item.han {
+  color: #ff6a6a;
+}
 
 .setup-overlay {
-    background: rgba(40, 44, 52, 0.95);
-    z-index: 200;
+  background: rgba(40, 44, 52, 0.95);
+  z-index: 200;
 }
 
-/* 2x2 Grid Layout for Setup Options */
 .setup-options {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 15px;
-    margin-top: 20px;
-    width: 100%;
-    max-width: 400px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 15px;
+  margin-top: 20px;
+  width: 100%;
+  max-width: 400px;
 }
 
 .setup-btn {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    padding: 15px;
-    border: 2px solid #555;
-    background: #333;
-    border-radius: 8px;
-    cursor: pointer;
-    transition: all 0.2s;
-    width: 100%; /* Fill grid cell */
-    box-sizing: border-box;
-    color: #eee;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 15px;
+  border: 2px solid #555;
+  background: #333;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+  width: 100%;
+  box-sizing: border-box;
+  color: #eee;
 }
 
 .setup-btn:hover {
-    background: #444;
-    border-color: #888;
-    transform: translateY(-2px);
+  background: #444;
+  border-color: #888;
+  transform: translateY(-2px);
 }
 
 .setup-label {
-    margin-bottom: 10px;
-    font-size: 1rem;
-    font-weight: bold;
+  margin-bottom: 10px;
+  font-size: 1rem;
+  font-weight: bold;
 }
 
 .setup-preview {
-    display: flex;
-    flex-direction: row; /* Horizontal alignment */
-    gap: 4px;
-    background: rgba(255, 255, 255, 0.1);
-    padding: 5px;
-    border-radius: 4px;
+  display: flex;
+  flex-direction: row;
+  gap: 4px;
+  background: rgba(255, 255, 255, 0.1);
+  padding: 5px;
+  border-radius: 4px;
 }
 
-/* Restrict Piece Size for Setup */
 .setup-piece {
-    width: 30px; 
-    height: 30px;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-}
-
-/* Ensure inner piece image fits */
-
-/* --- Responsive Layout --- */
-
-
-.janggi-game-container {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 20px;
+  width: 30px;
+  height: 30px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
 }
 
 .janggi-sidebar {
-    display: flex;
-    flex-direction: column;
-    gap: 20px;
-    width: 100%;
-    /* Remove strict max-width to allow growth optionally, or keep it but larger */
-    max-width: 500px; /* Keep reasonable limit on mobile */
-    /* Center items horizontally within the sidebar */
-    align-items: center; 
+  width: min(360px, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 
-.settings-controls {
-    background: rgba(0,0,0,0.2);
-    padding: 15px;
-    border-radius: 8px;
-    display: flex;
-    flex-direction: column;
-    gap: 15px;
-    /* Ensure the settings box itself is centered if it doesn't take full width */
-    width: 100%; 
-    box-sizing: border-box;
-    align-items: center; 
-}
-
-.control-row {
-    display: flex;
-    gap: 20px;
-    justify-content: center;
-    align-items: center;
-    flex-wrap: wrap;
+.sidebar-top-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
 .home-btn {
-    align-self: flex-start;
-    padding: 8px 15px;
-    background: #444;
-    color: white;
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
-    margin-bottom: 10px;
+  flex: 0 0 auto;
+  padding: 10px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 12px;
+  background: linear-gradient(180deg, #3f444e 0%, #2c3038 100%);
+  color: #f2f2f2;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.home-btn:hover {
+  border-color: rgba(255, 159, 43, 0.9);
+  transform: translateY(-1px);
+}
+
+.mode-chip {
+  flex: 1;
+  text-align: center;
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: rgba(12, 13, 17, 0.78);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  color: #d6d6d6;
+  font-weight: 600;
+}
+
+.game-status-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  background: rgba(12, 13, 17, 0.78);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 14px;
+  padding: 14px;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.28);
+}
+
+.turn-indicator {
+  color: #f0f0f0;
+  font-weight: 700;
+  font-size: 1rem;
+}
+
+.turn-team {
+  font-weight: 800;
+}
+
+.turn-team.cho {
+  color: #6798ff;
+}
+
+.turn-team.han {
+  color: #ff6f6f;
+}
+
+.replay-step {
+  color: #dddddd;
+  font-size: 0.92rem;
+}
+
+.game-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.game-controls button {
+  flex: 1 1 95px;
+  min-height: 40px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: linear-gradient(180deg, #3f444e 0%, #2c3038 100%);
+  color: #f3f3f3;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.game-controls button:hover:not(:disabled) {
+  border-color: rgba(255, 159, 43, 0.9);
+  transform: translateY(-1px);
+}
+
+.game-controls button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.settings-controls {
+  background: rgba(12, 13, 17, 0.78);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 14px;
+  padding: 14px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.28);
+}
+
+.control-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 10px;
+  padding: 9px 12px;
+  color: #f4f4f4;
+  font-size: 0.93rem;
+}
+
+.control-row.select-row {
+  justify-content: space-between;
+  flex: 1 1 100%;
+}
+
+.control-label {
+  font-weight: 700;
+}
+
+.control-row.select-row select {
+  min-width: 120px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.26);
+  background: #2c3038;
+  color: #f5f5f5;
+  padding: 6px 10px;
+  font-size: 0.92rem;
+}
+
+.control-row.toggle-row {
+  flex: 1 1 calc(50% - 10px);
+  min-width: 150px;
+  justify-content: flex-start;
+  cursor: pointer;
+}
+
+.control-row.toggle-row input {
+  accent-color: #ff8f1f;
 }
 
 .resign-btn {
-    background-color: #8b0000 !important;
-    color: white;
-}
-.resign-btn:hover {
-    background-color: #a00000 !important;
+  background: linear-gradient(180deg, #8f2020 0%, #6d1010 100%) !important;
+  border-color: rgba(255, 152, 152, 0.7) !important;
 }
 
-/* New Spinner Styles */
+.resign-btn:hover:not(:disabled) {
+  background: linear-gradient(180deg, #a72e2e 0%, #7d1717 100%) !important;
+}
+
 @keyframes spin {
-    0% { transform: rotate(0deg); }
-    100% { transform: rotate(360deg); }
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
 }
 
 .spinner {
-    border: 4px solid rgba(255, 255, 255, 0.3);
-    border-top: 4px solid #fff;
-    border-radius: 50%;
-    width: 40px;
-    height: 40px;
-    animation: spin 1s linear infinite;
-    margin: 20px auto;
+  border: 4px solid rgba(255, 255, 255, 0.3);
+  border-top: 4px solid #ffffff;
+  border-radius: 50%;
+  width: 40px;
+  height: 40px;
+  animation: spin 1s linear infinite;
+  margin: 20px auto;
 }
 
-.matching-overlay, .waiting-overlay {
-    display: flex;
-    flex-direction: column;
+.matching-overlay,
+.waiting-overlay {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  background: rgba(0, 0, 0, 0.85);
+  color: #ffffff;
+  z-index: 100;
+}
+
+@media (max-width: 980px) {
+  .janggi-game-container {
+    gap: 18px;
+    padding: 16px;
+  }
+
+  .janggi-sidebar {
+    width: min(760px, 100%);
+  }
+
+  .sidebar-top-row {
     justify-content: center;
-    align-items: center;
-    background: rgba(0, 0, 0, 0.85); /* Dimmed */
-    color: white;
-    z-index: 100;
+  }
+
+  .home-btn {
+    flex: 1 1 120px;
+  }
+
+  .mode-chip {
+    flex: 1 1 170px;
+  }
 }
 
-/* Wide screen: Board Left, Sidebar Right */
-@media (min-width: 950px) {
-    .janggi-game-container {
-        flex-direction: row;
-        align-items: center; /* Vertically align sidebar to center relative to board */
-        justify-content: center;
-        gap: 40px; /* Increase gap for wider screens */
-        padding: 20px;
-        box-sizing: border-box;
-    }
-    
-    .janggi-sidebar {
-        /* Sidebar takes remaining space but not too much */
-        width: 350px; 
-        flex-shrink: 0;
-        max-width: none;
-    }
-    
-    .janggi-board {
-        /* Remove explicit width reduction to prevent shrinking */
-        /* It will inherit 90vmin from default, and flex-shrink will handle overlap */
-        /* Ensure it doesn't get too small if screen is narrow but above 950px */
-        flex-shrink: 1;
-    }
+@media (max-width: 640px) {
+  .janggi-game-container {
+    padding: 8px;
+  }
+
+  .match-header {
+    width: min(96vw, 620px);
+    font-size: 0.95rem;
+  }
+
+  .match-title {
+    font-size: 1.08rem;
+  }
+
+  .move-count {
+    font-size: 1rem;
+  }
+
+  .janggi-board {
+    width: min(96vw, 620px);
+  }
+
+  .game-controls button {
+    flex: 1 1 calc(50% - 10px);
+  }
+
+  .control-row.toggle-row {
+    flex: 1 1 100%;
+  }
 }
