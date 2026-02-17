@@ -12,11 +12,18 @@ const {
   spendCoinsForAiMatch,
   rechargeCoins,
 } = require('./src/coinService');
+const {
+  boardToJanggiFen,
+  clampMoveTime,
+  isValidBoardState,
+  parseEngineMove,
+} = require('./src/aiMove');
 const { resolveRankAfterResult, normalizeCounter } = require('./src/rank');
 require('dotenv').config();
 
 const app = express();
 const server = http.createServer(app);
+const AI_SERVICE_URL = process.env.AI_SERVICE_URL || 'http://localhost:4000';
 
 // Database Connection
 const pool = new Pool({
@@ -139,6 +146,69 @@ app.post('/api/coins/spend-ai-match', authenticateToken, async (req, res) => {
     }
     console.error(err);
     res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Compute AI move through Fairy-Stockfish service.
+app.post('/api/ai/move', authenticateToken, async (req, res) => {
+  const { board, turn, movetime } = req.body || {};
+  if (!isValidBoardState(board) || (turn !== TEAM_CHO && turn !== TEAM_HAN)) {
+    return res.status(400).json({ error: 'Invalid board state or turn' });
+  }
+
+  let fen;
+  try {
+    fen = boardToJanggiFen(board, turn);
+  } catch (err) {
+    return res.status(400).json({ error: 'Invalid board state' });
+  }
+
+  const requestedMoveTime = clampMoveTime(
+    movetime,
+    clampMoveTime(process.env.AI_MOVE_TIME_MS, 700),
+  );
+
+  const timeoutMs = Math.max(8000, requestedMoveTime * 4);
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetch(`${AI_SERVICE_URL}/move`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        fen,
+        movetime: requestedMoveTime,
+      }),
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      const errorBody = await response.text().catch(() => '');
+      console.error('AI service error:', response.status, errorBody);
+      return res.status(502).json({ error: 'AI service error' });
+    }
+
+    const aiResult = await response.json();
+    const bestmove = aiResult?.bestmove;
+    const move = parseEngineMove(bestmove);
+    if (!move) {
+      return res.json({
+        pass: true,
+        bestmove: bestmove || '(none)',
+      });
+    }
+
+    return res.json({
+      pass: false,
+      bestmove,
+      move,
+    });
+  } catch (err) {
+    console.error('Failed to request AI move:', err);
+    return res.status(502).json({ error: 'Failed to request AI move' });
+  } finally {
+    clearTimeout(timeoutId);
   }
 });
 

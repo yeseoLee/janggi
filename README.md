@@ -12,7 +12,7 @@ A modern, web-based implementation of **Janggi (Korean Chess)** featuring real-t
   - **Sequential Setup**: Authentic game start flow where 'Han' (Red) sets up first, followed by 'Cho' (Blue), with real-time UI synchronization.
   - **Live Gameplay**: Instant move updates via WebSockets.
   - **Game States**: Handling of Check (Janggun), Checkmate, Resignation, and Draws.
-- **AI Match**: Solo practice mode (Currently supports basic heuristic/random moves).
+- **AI Match**: Solo practice mode powered by **Fairy-Stockfish** (Janggi variant).
 - **Replay (Gibo)**: 
   - Automatically saves all ranked games to the database.
   - View list of past games with winners and timestamps.
@@ -44,8 +44,12 @@ A modern, web-based implementation of **Janggi (Korean Chess)** featuring real-t
 - **PostgreSQL** for persistent data (Users, Games).
 - **Nginx** as a reverse proxy and static file server.
 
+### AI Engine
+- **Fairy-Stockfish** served through a dedicated AI service container.
+- Backend proxies AI move requests to the engine service (`/api/ai/move`).
+
 ### Infrastructure
-- **Docker** & **Docker Compose**: Orchestrates Frontend (Nginx), Backend, and Database containers.
+- **Docker** & **Docker Compose**: Orchestrates Frontend (Nginx), Backend, AI server, and Database containers.
 
 ---
 
@@ -75,6 +79,7 @@ A modern, web-based implementation of **Janggi (Korean Chess)** featuring real-t
 ### Default Ports
 - **Frontend (Nginx)**: 80 (mapped to localhost:80)
 - **Backend API**: 3000 (internal)
+- **AI Engine Server**: 4000 (mapped to localhost:4000)
 - **PostgreSQL**: 5432 (mapped to localhost:5432)
 
 ---

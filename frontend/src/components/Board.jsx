@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { io } from 'socket.io-client';
 import { useNavigate } from 'react-router-dom';
+import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
 import { useLanguage } from '../context/LanguageContext';
 import Piece from './Piece';
@@ -10,6 +11,35 @@ import './Board.css';
 
 const socket = io('/', { autoConnect: false }); // Connect manually
 const createEmptyBoard = () => Array.from({ length: 10 }, () => Array(9).fill(null));
+const AI_PLAYER_TEAM = TEAM.CHO;
+const AI_ENGINE_TEAM = TEAM.HAN;
+const AI_THINK_DELAY_MS = 220;
+const AI_MOVE_TIME_MS = 700;
+
+const cloneBoardState = (boardState) =>
+  boardState.map((row) => row.map((piece) => (piece ? { ...piece } : null)));
+
+const pickRandomSetup = () => {
+  const setupValues = Object.values(SETUP_TYPES);
+  if (setupValues.length === 0) return SETUP_TYPES.MSMS;
+  return setupValues[Math.floor(Math.random() * setupValues.length)];
+};
+
+const pickFallbackAiMove = (boardState, team) => {
+  for (let r = 0; r < 10; r += 1) {
+    for (let c = 0; c < 9; c += 1) {
+      const piece = boardState[r][c];
+      if (!piece || piece.team !== team) continue;
+      const safeMoves = getSafeMoves(boardState, r, c);
+      if (safeMoves.length === 0) continue;
+      return {
+        from: { r, c },
+        to: safeMoves[Math.floor(Math.random() * safeMoves.length)],
+      };
+    }
+  }
+  return null;
+};
 
 const Board = ({ 
     gameMode, // 'ai', 'online', 'replay'
@@ -51,6 +81,8 @@ const Board = ({
   const [winner, setWinner] = useState(null);
   const [checkAlert, setCheckAlert] = useState(null); 
   const [scores, setScores] = useState({ cho: 72, han: 73.5 }); 
+  const [aiThinking, setAiThinking] = useState(false);
+  const aiThinkingRef = useRef(false);
 
   // Replay State
   const [replayStep, setReplayStep] = useState(0); 
@@ -71,6 +103,8 @@ const Board = ({
       setWinner(null);
       setCheckAlert(null);
       setScores(calculateScore(firstFrame.board));
+      setAiThinking(false);
+      aiThinkingRef.current = false;
     } else {
       setGameState('IDLE');
       setBoard(createEmptyBoard());
@@ -81,6 +115,8 @@ const Board = ({
       setWinner(null);
       setCheckAlert(null);
       setScores({ cho: 72, han: 73.5 });
+      setAiThinking(false);
+      aiThinkingRef.current = false;
     }
   }, [gameMode, replayHistory]);
 
@@ -139,7 +175,7 @@ const Board = ({
 
         socket.on('pass_turn', () => {
              alert(tRef.current('board.alerts.opponentPassed'));
-             setHistory(prev => [...prev, { board: board.map(row => [...row]), turn }]);
+             setHistory(prev => [...prev, { board: cloneBoardState(board), turn }]);
              setTurn(t => t === TEAM.CHO ? TEAM.HAN : TEAM.CHO);
         });
 
@@ -171,10 +207,29 @@ const Board = ({
             socket.off('game_over');
             socket.disconnect();
         };
+    } else if (gameMode === 'ai') {
+        const hanAiSetup = pickRandomSetup();
+        setRoom(null);
+        setOpponentInfo(null);
+        setMyTeam(AI_PLAYER_TEAM);
+        myTeamRef.current = AI_PLAYER_TEAM;
+        setHanSetup(hanAiSetup);
+        setChoSetup(null);
+        setBoard(createEmptyBoard());
+        setTurn(TEAM.CHO);
+        setHistory([]);
+        setWinner(null);
+        setSelectedPos(null);
+        setValidMoves([]);
+        setScores({ cho: 72, han: 73.5 });
+        setAiThinking(false);
+        aiThinkingRef.current = false;
+        setGameState('SETUP_CHO');
+        setViewTeam?.(TEAM.CHO);
     } else {
-        // AI / Local Mode
+        // Local mode fallback (manual two-side play)
         setGameState('SETUP_HAN');
-        setMyTeam(null); // Control both
+        setMyTeam(null);
     }
   }, [gameMode]);
 
@@ -202,6 +257,13 @@ const Board = ({
           return;
       }
 
+      if (gameMode === 'ai') {
+          if (gameState !== 'SETUP_CHO') return;
+          setChoSetup(type);
+          startGame(hanSetup || pickRandomSetup(), type);
+          return;
+      }
+
       // Local Logic
       if (gameState === 'SETUP_HAN') {
           setHanSetup(type);
@@ -217,8 +279,86 @@ const Board = ({
       setBoard(initialBoard);
       setGameState('PLAYING');
       setTurn(TEAM.CHO);
-      setScores(calculateScore(initialBoard)); 
+      setHistory([]);
+      setWinner(null);
+      setSelectedPos(null);
+      setValidMoves([]);
+      setCheckAlert(null);
+      setScores(calculateScore(initialBoard));
+      setAiThinking(false);
+      aiThinkingRef.current = false;
   };
+
+  useEffect(() => {
+    if (gameMode !== 'ai') return;
+    if (gameState !== 'PLAYING' || winner) return;
+    if (turn !== AI_ENGINE_TEAM) return;
+    if (isCheck(board, turn) && isCheckmate(board, turn)) return;
+    if (aiThinkingRef.current) return;
+
+    let cancelled = false;
+
+    const requestAiMove = async () => {
+      aiThinkingRef.current = true;
+      setAiThinking(true);
+
+      try {
+        const response = await axios.post('/api/ai/move', {
+          board,
+          turn,
+          movetime: AI_MOVE_TIME_MS,
+        });
+        if (cancelled) return;
+
+        if (response.data?.pass) {
+          setHistory((prev) => [...prev, { board: cloneBoardState(board), turn }]);
+          setTurn((prev) => (prev === TEAM.CHO ? TEAM.HAN : TEAM.CHO));
+          setSelectedPos(null);
+          setValidMoves([]);
+          return;
+        }
+
+        const aiMove = response.data?.move;
+        const movingPiece = board[aiMove?.from?.r]?.[aiMove?.from?.c];
+        const legalTargets = movingPiece ? getSafeMoves(board, aiMove.from.r, aiMove.from.c) : [];
+        const isLegal = legalTargets.some((move) => move.r === aiMove?.to?.r && move.c === aiMove?.to?.c);
+
+        if (!movingPiece || movingPiece.team !== AI_ENGINE_TEAM || !isLegal) {
+          throw new Error('AI returned an invalid move.');
+        }
+
+        applyMove(aiMove.from, aiMove.to, false);
+      } catch (err) {
+        console.error('AI move failed. Falling back to local move picker.', err);
+        if (cancelled) return;
+
+        const fallback = pickFallbackAiMove(board, AI_ENGINE_TEAM);
+        if (fallback) {
+          applyMove(fallback.from, fallback.to, false);
+          return;
+        }
+
+        if (isCheck(board, AI_ENGINE_TEAM)) {
+          setWinner(AI_PLAYER_TEAM);
+        }
+      } finally {
+        aiThinkingRef.current = false;
+        if (!cancelled) setAiThinking(false);
+      }
+    };
+
+    const timer = setTimeout(() => {
+      requestAiMove();
+    }, AI_THINK_DELAY_MS);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+      aiThinkingRef.current = false;
+      setAiThinking(false);
+    };
+  }, [board, gameMode, gameState, turn, winner]);
+
     // ... useEffect for Check ...
   useEffect(() => {
     if (gameState !== 'PLAYING') return;
@@ -246,6 +386,7 @@ const Board = ({
     if (gameState !== 'PLAYING' || winner) return;
     
     if (gameMode === 'online' && myTeam && turn !== myTeam) return;
+    if (gameMode === 'ai' && turn !== AI_PLAYER_TEAM) return;
 
     if (selectedPos) {
       const isMove = validMoves.some(m => m.r === r && m.c === c);
@@ -261,6 +402,7 @@ const Board = ({
     const piece = board[r][c];
     if (piece && piece.team === turn) {
         if (gameMode === 'online' && myTeam && piece.team !== myTeam) return;
+        if (gameMode === 'ai' && piece.team !== AI_PLAYER_TEAM) return;
 
       setSelectedPos({ r, c });
       const moves = getSafeMoves(board, r, c);
@@ -272,7 +414,7 @@ const Board = ({
   };
 
   const applyMove = (from, to, isLocal) => {
-    setHistory(prev => [...prev, { board: board.map(row => [...row]), turn }]);
+    setHistory(prev => [...prev, { board: cloneBoardState(board), turn }]);
     setBoard(prevBoard => {
         const newBoard = prevBoard.map(row => [...row]);
         const piece = newBoard[from.r][from.c];
@@ -287,13 +429,16 @@ const Board = ({
 
   const handleReset = () => {
       if (gameMode !== 'online') {
-          setBoard(generateBoard(choSetup || 'MASANG', hanSetup || 'MASANG'));
+          setBoard(generateBoard(choSetup || SETUP_TYPES.MSMS, hanSetup || SETUP_TYPES.MSMS));
           setTurn(TEAM.CHO);
           setHistory([]);
           setWinner(null);
           setSelectedPos(null);
           setValidMoves([]);
+          setCheckAlert(null);
           setScores({ cho: 72, han: 73.5 });
+          setAiThinking(false);
+          aiThinkingRef.current = false;
       }
   };
 
@@ -308,13 +453,17 @@ const Board = ({
       setWinner(null);
       setSelectedPos(null);
       setValidMoves([]);
+      setCheckAlert(null);
+      setAiThinking(false);
+      aiThinkingRef.current = false;
   };
 
   const handlePass = () => {
        if (winner) return;
+       if (gameMode === 'ai' && turn !== AI_PLAYER_TEAM) return;
        // Check if passing is allowed (e.g. valid moves exist? optional rule)
        // For now allow pass
-       setHistory(prev => [...prev, { board: board.map(row => [...row]), turn }]);
+       setHistory(prev => [...prev, { board: cloneBoardState(board), turn }]);
        setTurn(turn === TEAM.CHO ? TEAM.HAN : TEAM.CHO);
        setSelectedPos(null);
        setValidMoves([]);
@@ -324,7 +473,7 @@ const Board = ({
       if (turn !== myTeam) return;
       if (checkAlert === turn) { alert(t('board.alerts.cannotPassInCheck')); return; }
       socket.emit('pass', { room, team: myTeam });
-      setHistory(prev => [...prev, { board: board.map(row => [...row]), turn }]);
+      setHistory(prev => [...prev, { board: cloneBoardState(board), turn }]);
       setTurn(t => t === TEAM.CHO ? TEAM.HAN : TEAM.CHO);
   };
   
@@ -634,6 +783,9 @@ const Board = ({
                  {gameMode === 'replay' && (
                     <div className="replay-step">{t('board.step', { current: replayStep + 1, total: replayHistory?.length })}</div>
                  )}
+                 {gameMode === 'ai' && aiThinking && (
+                    <div className="replay-step">{t('board.aiThinking')}</div>
+                 )}
                  
                  <div className="game-controls">
                      {gameMode === 'replay' ? (
@@ -648,9 +800,9 @@ const Board = ({
                          </>
                      ) : (
                          <>
-                            <button onClick={handleReset}>{t('board.reset')}</button>
-                            <button onClick={handleUndo}>{t('board.undo')}</button>
-                            <button onClick={handlePass}>{t('board.pass')}</button>
+                            <button onClick={handleReset} disabled={gameMode === 'ai' && aiThinking}>{t('board.reset')}</button>
+                            <button onClick={handleUndo} disabled={gameMode === 'ai' && aiThinking}>{t('board.undo')}</button>
+                            <button onClick={handlePass} disabled={gameMode === 'ai' && (aiThinking || turn !== AI_PLAYER_TEAM)}>{t('board.pass')}</button>
                          </>
                      )}
                  </div>

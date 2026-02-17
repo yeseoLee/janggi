@@ -26,8 +26,11 @@ services:
       DB_NAME: janggi_db
       DB_PORT: 5432
       PORT: 3000
+      AI_SERVICE_URL: http://ai-server:4000
+      AI_MOVE_TIME_MS: 700
     depends_on:
       - postgres
+      - ai-server
 
   frontend:
     build: ./frontend
@@ -36,6 +39,16 @@ services:
       - "80:80"
     depends_on:
       - backend
+
+  ai-server:
+    build: ./ai-server
+    container_name: janggi-ai-server
+    ports:
+      - "4000:4000"
+    environment:
+      PORT: 4000
+      AI_VARIANT: janggi
+      AI_MOVE_TIME_MS: 700
 
 volumes:
   postgres_data:
