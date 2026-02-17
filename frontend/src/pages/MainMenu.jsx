@@ -1,8 +1,55 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate, Link } from 'react-router-dom';
 import axios from 'axios';
 import { useLanguage } from '../context/LanguageContext';
+
+const GUP_PATTERN = /^([1-9]|1[0-8])급$/;
+const DAN_PATTERN = /^([1-9])단$/;
+
+const normalizeCounter = (value) => {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return 0;
+  return Math.max(0, Math.floor(parsed));
+};
+
+const getRankThreshold = (rank) => {
+  const gupMatch = rank?.match(GUP_PATTERN);
+  if (gupMatch) {
+    const gup = Number(gupMatch[1]);
+    return gup >= 10 ? 3 : 5;
+  }
+  if (DAN_PATTERN.test(rank || '')) return 7;
+  return 3;
+};
+
+const getRankTier = (rank) => {
+  const gupMatch = rank?.match(GUP_PATTERN);
+  if (gupMatch) return 18 - Number(gupMatch[1]);
+
+  const danMatch = rank?.match(DAN_PATTERN);
+  if (danMatch) return 17 + Number(danMatch[1]);
+
+  return 0;
+};
+
+const buildRankProgress = (rank, rankWins, rankLosses) => {
+  const wins = normalizeCounter(rankWins);
+  const losses = normalizeCounter(rankLosses);
+  const threshold = getRankThreshold(rank);
+  const tier = getRankTier(rank);
+  const canPromote = tier < 26;
+  const canDemote = tier > 0;
+
+  return {
+    wins,
+    losses,
+    canPromote,
+    canDemote,
+    winsRemaining: canPromote ? Math.max(0, threshold - wins) : 0,
+    lossesRemaining: canDemote ? Math.max(0, threshold - losses) : 0,
+  };
+};
 
 function MainMenu() {
   const { user, logout, refreshUser } = useAuth();
@@ -20,6 +67,11 @@ function MainMenu() {
       }
     };
   }, []);
+
+  const rankProgress = useMemo(
+    () => buildRankProgress(user?.rank, user?.rank_wins, user?.rank_losses),
+    [user?.rank, user?.rank_wins, user?.rank_losses],
+  );
 
   const showToast = (message) => {
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
@@ -97,7 +149,22 @@ function MainMenu() {
 
       <div className="menu-user-card">
         <h3>{t('menu.welcome', { nickname: user.nickname })}</h3>
-        <p>{t('menu.rank', { rank: user.rank })}</p>
+        <p className="menu-rank-line">
+          {t('menu.rank', { rank: user.rank })}
+          <span className="menu-rank-inline">
+            {t('menu.rankRecordShort', { wins: rankProgress.wins, losses: rankProgress.losses })}
+          </span>
+        </p>
+        <p className="menu-rank-remaining">
+          {t('menu.rankProgressToGo', {
+            promotion: rankProgress.canPromote
+              ? t('menu.rankProgressPromotionLeft', { count: rankProgress.winsRemaining })
+              : t('menu.rankProgressPromotionLocked'),
+            demotion: rankProgress.canDemote
+              ? t('menu.rankProgressDemotionLeft', { count: rankProgress.lossesRemaining })
+              : t('menu.rankProgressDemotionLocked'),
+          })}
+        </p>
         <p>{t('menu.record', { wins: user.wins, losses: user.losses })}</p>
         <p>{t('menu.coins', { coins: user.coins })}</p>
         <div className="menu-account-actions">

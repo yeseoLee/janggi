@@ -129,6 +129,24 @@
   font-size: 1.05rem;
 }
 
+.menu-rank-line {
+  display: flex;
+  justify-content: center;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.menu-rank-inline {
+  color: #ffd07a;
+  font-weight: 600;
+}
+
+.menu-rank-remaining {
+  color: #b8c2d9;
+  font-size: 0.96rem;
+}
+
 .menu-account-actions {
   display: flex;
   gap: 10px;
