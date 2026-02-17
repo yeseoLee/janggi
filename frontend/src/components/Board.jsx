@@ -331,6 +331,24 @@ const Board = ({
 
   const modeLabel = gameMode === 'online' ? t('board.mode.online') : gameMode === 'replay' ? t('board.mode.replay') : t('board.mode.ai');
   const displayMoveCount = gameMode === 'replay' ? Math.max((replayHistory?.length || 1) - 1, 0) : history.length;
+  const CAPTURE_DISPLAY_ORDER = [
+    PIECE_TYPE.CHARIOT,
+    PIECE_TYPE.CANNON,
+    PIECE_TYPE.HORSE,
+    PIECE_TYPE.ELEPHANT,
+    PIECE_TYPE.GUARD,
+    PIECE_TYPE.SOLDIER,
+    PIECE_TYPE.GENERAL,
+  ];
+  const BASE_TEAM_PIECE_COUNTS = {
+    [PIECE_TYPE.CHARIOT]: 2,
+    [PIECE_TYPE.CANNON]: 2,
+    [PIECE_TYPE.HORSE]: 2,
+    [PIECE_TYPE.ELEPHANT]: 2,
+    [PIECE_TYPE.GUARD]: 2,
+    [PIECE_TYPE.SOLDIER]: 5,
+    [PIECE_TYPE.GENERAL]: 1,
+  };
   const getSetupPieces = (setupTypeOrLabel) => {
     if (!setupTypeOrLabel) return [];
     const setupKey = Object.prototype.hasOwnProperty.call(SETUP_TYPES, setupTypeOrLabel)
@@ -346,6 +364,31 @@ const Board = ({
       .filter(Boolean);
   };
   const opponentHanSetupPieces = getSetupPieces(hanSetup);
+  const getCapturedPieceList = (team) => {
+    if (gameState !== 'PLAYING') return [];
+
+    const aliveCounts = {};
+    for (const row of board) {
+      for (const piece of row) {
+        if (!piece || piece.team !== team) continue;
+        aliveCounts[piece.type] = (aliveCounts[piece.type] || 0) + 1;
+      }
+    }
+
+    const captured = [];
+    for (const type of CAPTURE_DISPLAY_ORDER) {
+      const baseCount = BASE_TEAM_PIECE_COUNTS[type] || 0;
+      const aliveCount = aliveCounts[type] || 0;
+      const deadCount = Math.max(baseCount - aliveCount, 0);
+      for (let idx = 0; idx < deadCount; idx += 1) {
+        captured.push(type);
+      }
+    }
+
+    return captured;
+  };
+  const choDeadPieces = getCapturedPieceList(TEAM.CHO);
+  const hanDeadPieces = getCapturedPieceList(TEAM.HAN);
 
   return (
     <div className="janggi-game-container">
@@ -511,6 +554,47 @@ const Board = ({
             <div className="score-board">
                 <div className="score-item cho">{t('board.scoreCho', { score: scores.cho })}</div>
                 <div className="score-item han">{t('board.scoreHan', { score: scores.han })}</div>
+            </div>
+
+            <div className="captured-piece-board">
+                <div className="captured-row">
+                    <div className="captured-label cho">{t('board.capturedCho')}</div>
+                    <div className="captured-pieces">
+                        {choDeadPieces.length === 0 ? (
+                            <span className="captured-empty">{t('board.noCapturedPieces')}</span>
+                        ) : (
+                            choDeadPieces.map((pieceType, idx) => (
+                                <div key={`captured-cho-${pieceType}-${idx}`} className="captured-piece-item">
+                                    <Piece
+                                        team={TEAM.CHO}
+                                        type={pieceType}
+                                        styleVariant={styleVariant}
+                                        inverted={invertColor}
+                                    />
+                                </div>
+                            ))
+                        )}
+                    </div>
+                </div>
+                <div className="captured-row">
+                    <div className="captured-label han">{t('board.capturedHan')}</div>
+                    <div className="captured-pieces">
+                        {hanDeadPieces.length === 0 ? (
+                            <span className="captured-empty">{t('board.noCapturedPieces')}</span>
+                        ) : (
+                            hanDeadPieces.map((pieceType, idx) => (
+                                <div key={`captured-han-${pieceType}-${idx}`} className="captured-piece-item">
+                                    <Piece
+                                        team={TEAM.HAN}
+                                        type={pieceType}
+                                        styleVariant={styleVariant}
+                                        inverted={invertColor}
+                                    />
+                                </div>
+                            ))
+                        )}
+                    </div>
+                </div>
             </div>
 
             <div className="game-status-bar">
