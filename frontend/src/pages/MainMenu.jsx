@@ -81,7 +81,7 @@ function MainMenu() {
 
   if (!user) {
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12, padding: 50 }}>
+      <div style={{ width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12, padding: 50, textAlign: 'center' }}>
         <Link to="/login"><button>{t('menu.login')}</button></Link>
         <Link to="/register"><button>{t('menu.register')}</button></Link>
       </div>
@@ -89,15 +89,15 @@ function MainMenu() {
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 30, padding: 50, position: 'relative' }}>
+    <div style={{ width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 30, padding: 50, position: 'relative', textAlign: 'center' }}>
       <h1>{t('menu.title')}</h1>
 
-      <div style={{ background: '#333', padding: 20, borderRadius: 8, width: 300, textAlign: 'left' }}>
+      <div style={{ background: '#333', padding: 20, borderRadius: 8, width: 300, textAlign: 'center' }}>
         <h3>{t('menu.welcome', { nickname: user.nickname })}</h3>
         <p>{t('menu.rank', { rank: user.rank })}</p>
         <p>{t('menu.record', { wins: user.wins, losses: user.losses })}</p>
         <p>{t('menu.coins', { coins: user.coins })}</p>
-        <div style={{ display: 'flex', gap: 10, marginTop: 10 }}>
+        <div style={{ display: 'flex', gap: 10, marginTop: 10, justifyContent: 'center', flexWrap: 'wrap' }}>
           <button onClick={logout} style={{ fontSize: '0.8em', background: '#555' }}>{t('menu.logout')}</button>
           <button onClick={handleWithdraw} style={{ fontSize: '0.8em', background: '#a00' }}>{t('menu.withdraw')}</button>
           <button onClick={handleRechargeCoins} disabled={isRecharging} style={{ fontSize: '0.8em', background: '#d08700' }}>{t('menu.rechargeCoins')}</button>

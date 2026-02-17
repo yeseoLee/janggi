@@ -23,7 +23,7 @@ function Register() {
   };
 
   return (
-    <div style={{ padding: 20 }}>
+    <div style={{ width: '100%', maxWidth: 360, padding: 20, textAlign: 'center', margin: '0 auto' }}>
       <h2>{t('register.title')}</h2>
       {error && <p style={{ color: 'red' }}>{error}</p>}
       <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 10, maxWidth: 300, margin: '0 auto' }}>
