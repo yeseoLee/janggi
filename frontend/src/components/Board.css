@@ -107,8 +107,7 @@
   left: 8%;
   right: 8%;
   bottom: 8%;
-  border-top: 1px solid rgba(28, 18, 11, 0.9);
-  border-left: 1px solid rgba(28, 18, 11, 0.9);
+  border: 1px solid rgba(28, 18, 11, 0.9);
   pointer-events: none;
 }
 
