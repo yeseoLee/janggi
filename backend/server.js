@@ -69,7 +69,7 @@ app.post('/api/auth/register', async (req, res) => {
     const hashedPassword = await bcrypt.hash(password, 10);
     // Grant 10 coins by default (schema default)
     const result = await pool.query(
-      'INSERT INTO users (username, password, nickname, coins) VALUES ($1, $2, $3, $4) RETURNING id, username, nickname, rank, coins',
+      'INSERT INTO users (username, password, nickname, coins) VALUES ($1, $2, $3, $4) RETURNING id, username, nickname, rank, coins, rank_wins, rank_losses',
       [username, hashedPassword, nickname, 10]
     );
     res.status(201).json({ message: 'User registered', user: result.rows[0] });
@@ -109,7 +109,10 @@ app.post('/api/auth/login', async (req, res) => {
 // Get User Info
 app.get('/api/user/me', authenticateToken, async (req, res) => {
   try {
-    const result = await pool.query('SELECT id, username, nickname, rank, wins, losses, coins FROM users WHERE id = $1', [req.user.id]);
+    const result = await pool.query(
+      'SELECT id, username, nickname, rank, wins, losses, coins, rank_wins, rank_losses FROM users WHERE id = $1',
+      [req.user.id],
+    );
     if (result.rows.length === 0) return res.sendStatus(404);
     res.json(result.rows[0]);
   } catch (err) {
@@ -133,6 +136,21 @@ app.delete('/api/auth/me', authenticateToken, async (req, res) => {
 // --- Database Schema Init (Ensure games table exists) ---
 const initDB = async () => {
     try {
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS users (
+                id SERIAL PRIMARY KEY,
+                username VARCHAR(50) UNIQUE NOT NULL,
+                password VARCHAR(255) NOT NULL,
+                nickname VARCHAR(50),
+                rank VARCHAR(20) DEFAULT '18급',
+                wins INTEGER DEFAULT 0,
+                losses INTEGER DEFAULT 0,
+                coins INTEGER DEFAULT 10,
+                rank_wins INTEGER DEFAULT 0,
+                rank_losses INTEGER DEFAULT 0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        `);
         await pool.query(`
             CREATE TABLE IF NOT EXISTS games (
                 id SERIAL PRIMARY KEY,
@@ -159,6 +177,10 @@ const initDB = async () => {
         await pool.query(`ALTER TABLE games ADD COLUMN IF NOT EXISTS move_count INTEGER DEFAULT 0;`);
         await pool.query(`ALTER TABLE games ADD COLUMN IF NOT EXISTS started_at TIMESTAMP;`);
         await pool.query(`ALTER TABLE games ADD COLUMN IF NOT EXISTS ended_at TIMESTAMP;`);
+
+        await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS rank_wins INTEGER DEFAULT 0;`);
+        await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS rank_losses INTEGER DEFAULT 0;`);
+        await pool.query(`UPDATE users SET rank_wins = COALESCE(rank_wins, 0), rank_losses = COALESCE(rank_losses, 0);`);
 
         await pool.query(`CREATE INDEX IF NOT EXISTS idx_games_played_at ON games (played_at DESC);`);
         await pool.query(`CREATE INDEX IF NOT EXISTS idx_games_move_count ON games (move_count DESC);`);
@@ -222,6 +244,103 @@ function getTeamBySocketId(game, socketId) {
     if (game.cho?.socketId === socketId) return TEAM_CHO;
     if (game.han?.socketId === socketId) return TEAM_HAN;
     return null;
+}
+
+function parseRank(rankStr) {
+    if (typeof rankStr !== 'string') return null;
+
+    const gupMatch = rankStr.match(/^([1-9]|1[0-8])급$/);
+    if (gupMatch) {
+        return { type: 'gup', value: Number(gupMatch[1]) };
+    }
+
+    const danMatch = rankStr.match(/^([1-9])단$/);
+    if (danMatch) {
+        return { type: 'dan', value: Number(danMatch[1]) };
+    }
+
+    return null;
+}
+
+function rankToTier(rankStr) {
+    const parsed = parseRank(rankStr);
+    if (!parsed) return 0;
+
+    if (parsed.type === 'gup') {
+        // 18급 -> 0, 1급 -> 17
+        return 18 - parsed.value;
+    }
+
+    // 1단 -> 18, 9단 -> 26
+    return 17 + parsed.value;
+}
+
+function tierToRank(tier) {
+    const normalized = Math.max(0, Math.min(26, tier));
+    if (normalized <= 17) {
+        return `${18 - normalized}급`;
+    }
+    return `${normalized - 17}단`;
+}
+
+function getRankThreshold(rankStr) {
+    const parsed = parseRank(rankStr) || { type: 'gup', value: 18 };
+    if (parsed.type === 'dan') return 7;
+    // 18급 ~ 10급
+    if (parsed.value >= 10) return 3;
+    // 9급 ~ 1급
+    return 5;
+}
+
+function canPromote(rankStr) {
+    return rankToTier(rankStr) < 26;
+}
+
+function canDemote(rankStr) {
+    return rankToTier(rankStr) > 0;
+}
+
+function promoteRank(rankStr) {
+    return tierToRank(rankToTier(rankStr) + 1);
+}
+
+function demoteRank(rankStr) {
+    return tierToRank(rankToTier(rankStr) - 1);
+}
+
+function normalizeCounter(value) {
+    return Math.max(0, Number.isFinite(Number(value)) ? Number(value) : 0);
+}
+
+function resolveRankAfterResult(rankStr, rankWins, rankLosses, result) {
+    let nextRank = parseRank(rankStr) ? rankStr : '18급';
+    let wins = normalizeCounter(rankWins);
+    let losses = normalizeCounter(rankLosses);
+
+    if (result === 'win') wins += 1;
+    if (result === 'loss') losses += 1;
+
+    // At most one rank change per game.
+    const threshold = getRankThreshold(nextRank);
+    if (wins >= threshold && canPromote(nextRank)) {
+        nextRank = promoteRank(nextRank);
+        wins = 0;
+        losses = 0;
+    } else if (losses >= threshold && canDemote(nextRank)) {
+        nextRank = demoteRank(nextRank);
+        wins = 0;
+        losses = 0;
+    } else {
+        // Bound counters when rank cannot move in that direction.
+        if (!canPromote(nextRank)) wins = Math.min(wins, threshold);
+        if (!canDemote(nextRank)) losses = Math.min(losses, threshold);
+    }
+
+    return {
+        rank: nextRank,
+        rankWins: wins,
+        rankLosses: losses,
+    };
 }
 
 // Game State Memory
@@ -414,9 +533,76 @@ async function processGameEnd(roomId, winnerTeam, resultType = 'unknown') {
     try {
         await client.query('BEGIN');
 
-        // Update Stats
-        await client.query('UPDATE users SET wins = wins + 1, coins = coins + 5 WHERE id = $1', [winnerId]);
-        await client.query('UPDATE users SET losses = losses + 1 WHERE id = $1', [loserId]);
+        const winnerUserResult = await client.query(
+            `SELECT id, rank, wins, losses, rank_wins, rank_losses
+             FROM users
+             WHERE id = $1
+             FOR UPDATE`,
+            [winnerId],
+        );
+        const loserUserResult = await client.query(
+            `SELECT id, rank, wins, losses, rank_wins, rank_losses
+             FROM users
+             WHERE id = $1
+             FOR UPDATE`,
+            [loserId],
+        );
+
+        if (winnerUserResult.rows.length === 0 || loserUserResult.rows.length === 0) {
+            throw new Error('Winner or loser user not found');
+        }
+
+        const winnerUser = winnerUserResult.rows[0];
+        const loserUser = loserUserResult.rows[0];
+
+        const winnerRankState = resolveRankAfterResult(
+            winnerUser.rank,
+            winnerUser.rank_wins,
+            winnerUser.rank_losses,
+            'win',
+        );
+        const loserRankState = resolveRankAfterResult(
+            loserUser.rank,
+            loserUser.rank_wins,
+            loserUser.rank_losses,
+            'loss',
+        );
+
+        // Update total stats and rank progress. (No coin reward on win)
+        await client.query(
+            `UPDATE users
+             SET wins = $2,
+                 losses = $3,
+                 rank = $4,
+                 rank_wins = $5,
+                 rank_losses = $6
+             WHERE id = $1`,
+            [
+                winnerId,
+                normalizeCounter(winnerUser.wins) + 1,
+                normalizeCounter(winnerUser.losses),
+                winnerRankState.rank,
+                winnerRankState.rankWins,
+                winnerRankState.rankLosses,
+            ],
+        );
+        await client.query(
+            `UPDATE users
+             SET wins = $2,
+                 losses = $3,
+                 rank = $4,
+                 rank_wins = $5,
+                 rank_losses = $6
+             WHERE id = $1`,
+            [
+                loserId,
+                normalizeCounter(loserUser.wins),
+                normalizeCounter(loserUser.losses) + 1,
+                loserRankState.rank,
+                loserRankState.rankWins,
+                loserRankState.rankLosses,
+            ],
+        );
 
         // Save Game Record
         await client.query(
@@ -441,7 +627,11 @@ async function processGameEnd(roomId, winnerTeam, resultType = 'unknown') {
         );
 
         await client.query('COMMIT');
-        console.log(`Game ${roomId} ended. Winner: ${winnerId}, saved ${moveLog.length} ply.`);
+        console.log(
+            `Game ${roomId} ended. Winner: ${winnerId}, saved ${moveLog.length} ply. ` +
+            `winner rank ${winnerUser.rank} -> ${winnerRankState.rank}, ` +
+            `loser rank ${loserUser.rank} -> ${loserRankState.rank}`,
+        );
         activeGames.delete(roomId);
     } catch (err) {
         await client.query('ROLLBACK');
