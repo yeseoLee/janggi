@@ -103,8 +103,15 @@ const clampMoveTime = (value, fallback = 700) => {
   return Math.max(100, Math.min(5000, Math.floor(parsed)));
 };
 
+const clampDepth = (value, fallback = 8) => {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.max(1, Math.min(30, Math.floor(parsed)));
+};
+
 module.exports = {
   boardToJanggiFen,
+  clampDepth,
   clampMoveTime,
   isValidBoardState,
   parseEngineMove,

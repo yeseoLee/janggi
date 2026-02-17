@@ -14,6 +14,7 @@ const {
 } = require('./src/coinService');
 const {
   boardToJanggiFen,
+  clampDepth,
   clampMoveTime,
   isValidBoardState,
   parseEngineMove,
@@ -151,7 +152,7 @@ app.post('/api/coins/spend-ai-match', authenticateToken, async (req, res) => {
 
 // Compute AI move through Fairy-Stockfish service.
 app.post('/api/ai/move', authenticateToken, async (req, res) => {
-  const { board, turn, movetime } = req.body || {};
+  const { board, turn, movetime, depth } = req.body || {};
   if (!isValidBoardState(board) || (turn !== TEAM_CHO && turn !== TEAM_HAN)) {
     return res.status(400).json({ error: 'Invalid board state or turn' });
   }
@@ -167,8 +168,12 @@ app.post('/api/ai/move', authenticateToken, async (req, res) => {
     movetime,
     clampMoveTime(process.env.AI_MOVE_TIME_MS, 700),
   );
+  const requestedDepth = clampDepth(
+    depth,
+    clampDepth(process.env.AI_SEARCH_DEPTH, 8),
+  );
 
-  const timeoutMs = Math.max(8000, requestedMoveTime * 4);
+  const timeoutMs = Math.max(15000, requestedMoveTime * 8);
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
@@ -179,6 +184,7 @@ app.post('/api/ai/move', authenticateToken, async (req, res) => {
       body: JSON.stringify({
         fen,
         movetime: requestedMoveTime,
+        depth: requestedDepth,
       }),
       signal: controller.signal,
     });

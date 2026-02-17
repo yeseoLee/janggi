@@ -13,6 +13,10 @@ const socket = io('/', { autoConnect: false }); // Connect manually
 const createEmptyBoard = () => Array.from({ length: 10 }, () => Array(9).fill(null));
 const AI_THINK_DELAY_MS = 220;
 const AI_MOVE_TIME_MS = 700;
+const AI_DEFAULT_DEPTH = 8;
+const AI_MIN_DEPTH = 2;
+const AI_MAX_DEPTH = 20;
+const AI_DEPTH_PRESETS = [4, 8, 12, 16];
 const getOpposingTeam = (team) => (team === TEAM.CHO ? TEAM.HAN : TEAM.CHO);
 
 const cloneBoardState = (boardState) =>
@@ -77,6 +81,7 @@ const Board = ({
   const [scores, setScores] = useState({ cho: 72, han: 73.5 }); 
   const [aiThinking, setAiThinking] = useState(false);
   const aiThinkingRef = useRef(false);
+  const [aiSearchDepth, setAiSearchDepth] = useState(AI_DEFAULT_DEPTH);
   const aiEngineTeam = myTeam ? getOpposingTeam(myTeam) : null;
 
   // Replay State
@@ -218,6 +223,7 @@ const Board = ({
         setScores({ cho: 72, han: 73.5 });
         setAiThinking(false);
         aiThinkingRef.current = false;
+        setAiSearchDepth(AI_DEFAULT_DEPTH);
         setGameState('SELECT_SIDE');
         setViewTeam?.(TEAM.CHO);
     } else {
@@ -244,6 +250,13 @@ const Board = ({
       setHanSetup(null);
       setChoSetup(null);
       setGameState(team === TEAM.HAN ? 'SETUP_HAN' : 'SETUP_CHO');
+  };
+
+  const handleAiDepthChange = (value) => {
+      const parsed = Number(value);
+      if (!Number.isFinite(parsed)) return;
+      const clamped = Math.max(AI_MIN_DEPTH, Math.min(AI_MAX_DEPTH, Math.floor(parsed)));
+      setAiSearchDepth(clamped);
   };
 
 
@@ -323,6 +336,7 @@ const Board = ({
           board,
           turn,
           movetime: AI_MOVE_TIME_MS,
+          depth: aiSearchDepth,
         });
         if (cancelled) return;
 
@@ -373,7 +387,7 @@ const Board = ({
       aiThinkingRef.current = false;
       setAiThinking(false);
     };
-  }, [aiEngineTeam, board, gameMode, gameState, myTeam, turn, winner]);
+  }, [aiEngineTeam, aiSearchDepth, board, gameMode, gameState, myTeam, turn, winner]);
 
     // ... useEffect for Check ...
   useEffect(() => {
@@ -640,6 +654,33 @@ const Board = ({
                            <>
                                <h2>{t('board.selectSideTitle')}</h2>
                                <p>{t('board.selectSideSubtitle')}</p>
+                               <div className="ai-level-config">
+                                   <div className="ai-level-header">
+                                       <span>{t('board.aiLevelLabel')}</span>
+                                       <span>{t('board.aiLevelDepthValue', { depth: aiSearchDepth })}</span>
+                                   </div>
+                                   <input
+                                       className="ai-level-slider"
+                                       type="range"
+                                       min={AI_MIN_DEPTH}
+                                       max={AI_MAX_DEPTH}
+                                       step={1}
+                                       value={aiSearchDepth}
+                                       onChange={(e) => handleAiDepthChange(e.target.value)}
+                                   />
+                                   <div className="ai-level-presets">
+                                       {AI_DEPTH_PRESETS.map((depth) => (
+                                           <button
+                                               key={`ai-depth-${depth}`}
+                                               type="button"
+                                               className={`ai-level-preset-btn ${aiSearchDepth === depth ? 'active' : ''}`}
+                                               onClick={() => handleAiDepthChange(depth)}
+                                           >
+                                               {t('board.aiLevelPreset', { depth })}
+                                           </button>
+                                       ))}
+                                   </div>
+                               </div>
                                <div className="side-select-options">
                                    <button
                                        type="button"

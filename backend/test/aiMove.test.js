@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 
 const {
   boardToJanggiFen,
+  clampDepth,
   isValidBoardState,
   parseEngineMove,
 } = require('../src/aiMove');
@@ -83,4 +84,11 @@ test('isValidBoardState validates shape and known pieces', () => {
 
   board[0][0] = { team: 'han', type: 'invalid_piece' };
   assert.equal(isValidBoardState(board), false);
+});
+
+test('clampDepth normalizes search depth within allowed range', () => {
+  assert.equal(clampDepth(undefined, 8), 8);
+  assert.equal(clampDepth('5', 8), 5);
+  assert.equal(clampDepth(0, 8), 1);
+  assert.equal(clampDepth(45, 8), 30);
 });

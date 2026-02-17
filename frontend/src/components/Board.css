@@ -359,6 +359,62 @@
   gap: 14px;
 }
 
+.ai-level-config {
+  margin-top: 18px;
+  width: 100%;
+  max-width: 420px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(17, 18, 24, 0.6);
+  box-sizing: border-box;
+}
+
+.ai-level-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #f0f1f5;
+}
+
+.ai-level-slider {
+  width: 100%;
+  margin-top: 10px;
+  accent-color: #ff972d;
+}
+
+.ai-level-presets {
+  margin-top: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.ai-level-preset-btn {
+  flex: 1 1 calc(50% - 8px);
+  min-height: 34px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: linear-gradient(180deg, #3a3f47 0%, #2b2f37 100%);
+  color: #f2f2f2;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.2s ease, border-color 0.2s ease, background 0.2s ease;
+}
+
+.ai-level-preset-btn:hover {
+  transform: translateY(-1px);
+  border-color: rgba(255, 151, 45, 0.85);
+}
+
+.ai-level-preset-btn.active {
+  border-color: rgba(255, 151, 45, 0.95);
+  background: linear-gradient(180deg, #5a3d22 0%, #3d2c1f 100%);
+}
+
 .side-select-btn {
   display: flex;
   flex-direction: column;
@@ -710,5 +766,9 @@
 
   .side-select-options {
     grid-template-columns: 1fr;
+  }
+
+  .ai-level-preset-btn {
+    flex: 1 1 100%;
   }
 }
