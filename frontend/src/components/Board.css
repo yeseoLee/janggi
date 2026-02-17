@@ -96,7 +96,7 @@
   border-right: none;
 }
 
-.grid-row:last-child .grid-cell {
+.grid-container > .grid-row:last-of-type .grid-cell {
   border-bottom: none;
 }
 
