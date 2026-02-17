@@ -173,34 +173,13 @@
 }
 
 .move-marker {
-  width: 38%;
-  aspect-ratio: 1 / 1;
+  width: 30%;
+  height: 30%;
+  background-color: rgba(0, 255, 0, 0.6);
   border-radius: 50%;
-  position: relative;
+  position: absolute;
   z-index: 20;
   pointer-events: none;
-  background: radial-gradient(circle at 30% 30%, #fff5eb 10%, #ff6d3a 44%, #ce3112 100%);
-  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.8);
-}
-
-.move-marker::before,
-.move-marker::after {
-  content: '';
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 52%;
-  height: 2px;
-  background: rgba(255, 255, 255, 0.95);
-  transform-origin: center;
-}
-
-.move-marker::before {
-  transform: translate(-50%, -50%) rotate(45deg);
-}
-
-.move-marker::after {
-  transform: translate(-50%, -50%) rotate(-45deg);
 }
 
 .interaction-cell:hover {
