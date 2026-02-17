@@ -1,122 +1,149 @@
 # Janggi (Korean Chess) Online
 
-![Janggi Board](https://upload.wikimedia.org/wikipedia/commons/thumb/c/c5/Xiangqi_board.svg/1200px-Xiangqi_board.svg.png)
-*(Note: Visual representation only, actual game UI differs)*
+Web-based Janggi service with online matchmaking, Fairy-Stockfish AI matches, replay (기보), rank progression, and bilingual UI (Korean/English).
 
-A modern, web-based implementation of **Janggi (Korean Chess)** featuring real-time multiplayer matchmaking, AI opponents, and game record replay (Gibo). Built with modern web technologies and fully containerized.
+## Current Features
 
-## 🌟 Key Features
+### Game Modes
+- Online Match (Socket.IO)
+  - Real-time 1v1 matchmaking
+  - Sequential setup flow (Han setup -> Cho setup)
+  - Move/pass/resign/checkmate/disconnect handling
+  - Game record persisted to DB at game end
+- AI Match (Fairy-Stockfish)
+  - AI entry cost: 1 coin
+  - Start flow: AI strength(depth) -> side select(Cho/Han) -> setup select (my setup + AI setup)
+  - Calls backend AI API (`/api/ai/move`) and validates legal moves on frontend
+  - Undo behavior in AI mode:
+    - On player turn: undo 2 plies (player move + AI reply)
+    - On AI turn: undo 1 ply
+- Replay (기보)
+  - Game list API and detail API
+  - Step-by-step replay (Prev/Next)
+  - Supports both current `move_log` format and legacy payload fallback
 
-### 🎮 Game Modes
-- **Online Match**: Real-time 1vs1 matchmaking system based on rank and win rate.
-  - **Sequential Setup**: Authentic game start flow where 'Han' (Red) sets up first, followed by 'Cho' (Blue), with real-time UI synchronization.
-  - **Live Gameplay**: Instant move updates via WebSockets.
-  - **Game States**: Handling of Check (Janggun), Checkmate, Resignation, and Draws.
-- **AI Match**: Solo practice mode powered by **Fairy-Stockfish** (Janggi variant).
-- **Replay (Gibo)**: 
-  - Automatically saves all ranked games to the database.
-  - View list of past games with winners and timestamps.
-  - Step-by-step replay functionality (Prev/Next) to analyze matches.
+### User / Economy / Rank
+- JWT auth (register/login/me/withdraw)
+- Coin system
+  - Initial coins: 10
+  - AI match costs 1 coin
+  - Manual recharge button grants +10 coins (`/api/coins/recharge`)
+  - Note: ad-link and daily-limit logic are planned (TODO in code)
+- Rank system
+  - Range: `18급 ~ 1급`, `1단 ~ 9단`
+  - No coin reward on victory
+  - Per-rank progress counters (`rank_wins`, `rank_losses`)
+  - Promotion / demotion thresholds:
+    - `18급 ~ 10급`: 3 wins / 3 losses
+    - `9급 ~ 1급`: 5 wins / 5 losses
+    - `단`: 7 wins / 7 losses
 
-### 🛡️ User System
-- **Authentication**: Secure Signup/Login using JWT and bcrypt.
-- **Stats Tracking**: Tracks Wins, Losses, Rank, and Win Rate.
-- **Rank System**: Matchmaking prioritizes users of similar skill levels.
+### UI / UX
+- Mobile-first centered layout for initial/login/register/menu/game/replay screens
+- Language selector (`한국어` / `English`)
+- Board UI improvements:
+  - Centered responsive board
+  - Captured pieces panel for both Cho/Han
+  - Setup previews rendered with piece images
+  - Valid move marker uses green dot
 
-### 💻 UI/UX
-- **Responsive Design**: Playable on desktop and mobile screens.
-- **Interactive Board**: Highlights valid moves, last move markers, and check alerts.
-- **Setup Selection**: Choose your 'Sang' (Elephant) and 'Ma' (Horse) positions (e.g., Masang-Masang, Yang-Gwi-Ma).
+## Architecture
 
----
+- `frontend`: React + Vite + Axios + Socket.IO client
+- `backend`: Express + Socket.IO + PostgreSQL
+- `ai-server`: Express wrapper around Fairy-Stockfish process
+- `postgres`: persistent DB
 
-## 🛠 Tech Stack
+### Docker Compose Services
+- `frontend` (port `80`)
+- `backend` (port `3000`)
+- `ai-server` (port `4000`)
+- `postgres` (port `5432`)
 
-### Frontend
-- **React 18** (Vite)
-- **Socket.IO Client** for real-time events.
-- **React Router** for navigation.
-- **CSS3** for responsive board layout and animations.
+`ai-server` builds Fairy-Stockfish from source and selects build arch for Docker target platform (`amd64`/`arm64`).
 
-### Backend
-- **Node.js** + **Express**
-- **Socket.IO** for WebSocket communication.
-- **PostgreSQL** for persistent data (Users, Games).
-- **Nginx** as a reverse proxy and static file server.
+## Quick Start
 
-### AI Engine
-- **Fairy-Stockfish** served through a dedicated AI service container.
-- Backend proxies AI move requests to the engine service (`/api/ai/move`).
-
-### Infrastructure
-- **Docker** & **Docker Compose**: Orchestrates Frontend (Nginx), Backend, AI server, and Database containers.
-
----
-
-## 🚀 Getting Started
-
-### Prerequisites
-- [Docker](https://www.docker.com/products/docker-desktop) installed on your machine.
-- [Git](https://git-scm.com/)
-
-### Installation
-
-1. **Clone the repository**
-   ```bash
-   git clone https://github.com/yeseoLee/janggi.git
-   cd janggi
-   ```
-
-2. **Run with Docker Compose**
-   ```bash
-   docker-compose up --build
-   ```
-   *This will build the frontend/backend images and start the PostgreSQL database.*
-
-3. **Access the Game**
-   - Open your browser and navigate to: `http://localhost`
-
-### Default Ports
-- **Frontend (Nginx)**: 80 (mapped to localhost:80)
-- **Backend API**: 3000 (internal)
-- **AI Engine Server**: 4000 (mapped to localhost:4000)
-- **PostgreSQL**: 5432 (mapped to localhost:5432)
-
----
-
-## 📋 How to Play
-
-1. **Register/Login**: Create an account to track your stats.
-2. **Choose Mode**:
-   - Select **Online Match** to find a human opponent.
-   - Select **AI Match** to practice alone.
-3. **Setup Phase**:
-   - If you are **Han (Red)**, choose your setup first.
-   - If you are **Cho (Blue)**, wait for Han, then choose your setup.
-4. **Gameplay**:
-   - Cho (Blue) moves first.
-   - Click a piece to see valid moves (green dots).
-   - Click a valid spot to move.
-   - The game ends on Checkmate or Resignation.
-
----
-
-## 📂 Project Structure
-
+1. Clone repository
+```bash
+git clone https://github.com/yeseoLee/janggi.git
+cd janggi
 ```
+
+2. Run all services
+```bash
+docker compose up --build
+```
+
+3. Open
+- `http://localhost`
+
+## Environment Notes
+
+### Backend (`docker-compose.yml`)
+- `AI_SERVICE_URL` default: `http://ai-server:4000`
+- `AI_MOVE_TIME_MS` default: `700`
+- `AI_SEARCH_DEPTH` default fallback: `8` (used when client depth is missing)
+
+### AI Server
+- `AI_VARIANT` default: `janggi`
+- `AI_MOVE_TIME_MS` default: `700`
+
+## API Overview
+
+### Auth / User
+- `POST /api/auth/register`
+- `POST /api/auth/login`
+- `GET /api/user/me`
+- `DELETE /api/auth/me`
+
+### Coins
+- `POST /api/coins/spend-ai-match`
+- `POST /api/coins/recharge`
+
+### AI
+- `POST /api/ai/move`
+  - body: `board`, `turn`, optional `movetime`, optional `depth`
+
+### Replay
+- `GET /api/games`
+- `GET /api/games/:id`
+
+## Testing
+
+Backend test scripts:
+```bash
+npm --prefix backend test
+npm --prefix backend run test:coverage
+```
+
+Current backend test coverage baseline (latest run in this repo):
+- Statements: 96.56%
+- Branches: 84.09%
+- Functions: 95%
+- Lines: 96.56%
+
+LCOV output:
+- `backend/coverage/lcov.info`
+
+## Project Structure
+
+```text
 janggi/
-├── backend/            # Express Server & Socket.IO logic
-│   ├── server.js       # Main entry point
-│   ├── jwt.js          # Auth middleware
-│   └── init.sql        # Database schema
-├── frontend/           # React Application
+├── ai-server/              # Fairy-Stockfish wrapper service
+├── backend/
+│   ├── server.js           # REST + Socket.IO + DB integration
 │   ├── src/
-│   │   ├── components/ # Board, Piece, Overlays
-│   │   ├── game/       # Game Rules & Constants
-│   │   └── pages/      # Login, MainMenu, GamePage, Replay
-├── docker-compose.yml  # Container orchestration
-└── nginx.conf          # Nginx configuration
+│   │   ├── aiMove.js       # board <-> FEN, engine move parsing
+│   │   ├── coinService.js
+│   │   └── rank.js
+│   └── test/               # Node test suites
+├── frontend/
+│   └── src/
+│       ├── components/
+│       ├── context/
+│       ├── game/
+│       ├── i18n/
+│       └── pages/
+└── docker-compose.yml
 ```
-
-## 📜 License
-This project is open-source.
