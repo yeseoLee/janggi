@@ -9,6 +9,7 @@ import { getValidMoves, getSafeMoves, isCheck, isCheckmate, calculateScore } fro
 import './Board.css';
 
 const socket = io('/', { autoConnect: false }); // Connect manually
+const createEmptyBoard = () => Array.from({ length: 10 }, () => Array(9).fill(null));
 
 const Board = ({ 
     gameMode, // 'ai', 'online', 'replay'
@@ -34,7 +35,7 @@ const Board = ({
   const [hanSetup, setHanSetup] = useState(null);
   const [choSetup, setChoSetup] = useState(null);
 
-  const [board, setBoard] = useState(Array(10).fill(Array(9).fill(null)));
+  const [board, setBoard] = useState(createEmptyBoard);
   const [turn, setTurn] = useState(TEAM.CHO);
   const [selectedPos, setSelectedPos] = useState(null);
   const [validMoves, setValidMoves] = useState([]);
@@ -54,20 +55,38 @@ const Board = ({
   // Replay State
   const [replayStep, setReplayStep] = useState(0); 
 
-  // Initialize Game Logic & Replay
+  // Initialize Replay Board (re-run when replay payload changes)
   useEffect(() => {
-    if (gameMode === 'replay') {
-        if (replayHistory && replayHistory.length > 0) {
-            setGameState('PLAYING');
-            // Load first step
-            setBoard(replayHistory[0].board);
-            setTurn(replayHistory[0].turn);
-            setReplayStep(0);
-        } else {
-            setGameState('IDLE');
-        }
-        return;
+    if (gameMode !== 'replay') return;
+
+    if (replayHistory && replayHistory.length > 0) {
+      const firstFrame = replayHistory[0];
+      setGameState('PLAYING');
+      setBoard(firstFrame.board);
+      setTurn(firstFrame.turn);
+      setReplayStep(0);
+      setSelectedPos(null);
+      setValidMoves([]);
+      setHistory([]);
+      setWinner(null);
+      setCheckAlert(null);
+      setScores(calculateScore(firstFrame.board));
+    } else {
+      setGameState('IDLE');
+      setBoard(createEmptyBoard());
+      setReplayStep(0);
+      setSelectedPos(null);
+      setValidMoves([]);
+      setHistory([]);
+      setWinner(null);
+      setCheckAlert(null);
+      setScores({ cho: 72, han: 73.5 });
     }
+  }, [gameMode, replayHistory]);
+
+  // Initialize Game Logic
+  useEffect(() => {
+    if (gameMode === 'replay') return;
 
     if (gameMode === 'online') {
         if (!socket.connected) socket.connect();
@@ -126,11 +145,18 @@ const Board = ({
 
         socket.on('game_over', (data) => {
              setWinner(data.winner);
-             const messageKey = data.type === 'resign'
-               ? 'board.alerts.opponentResigned'
-               : data.type === 'disconnect'
-                 ? 'board.alerts.disconnect'
-                 : 'board.alerts.checkmate';
+             if (data.type === 'resign') {
+               // Show resign toast only when opponent resigned.
+               const myTeamCurrent = myTeamRef.current;
+               if (myTeamCurrent && data.winner === myTeamCurrent) {
+                 alert(tRef.current('board.alerts.opponentResigned'));
+               }
+               return;
+             }
+
+             const messageKey = data.type === 'disconnect'
+               ? 'board.alerts.disconnect'
+               : 'board.alerts.checkmate';
              alert(tRef.current(messageKey));
         });
 

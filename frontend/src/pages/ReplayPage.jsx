@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import axios from 'axios';
 import Board from '../components/Board';
 import { toReplayFrames } from '../game/replay';
+import { TEAM } from '../game/constants';
 import { useLanguage } from '../context/LanguageContext';
 
 function ReplayPage() {
@@ -11,6 +12,10 @@ function ReplayPage() {
     const [gameData, setGameData] = useState(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
+    const [viewTeam, setViewTeam] = useState(TEAM.CHO);
+    const [invertColor, setInvertColor] = useState(false);
+    const [useRotatedPieces, setUseRotatedPieces] = useState(false);
+    const [styleVariant, setStyleVariant] = useState('2');
     const { t } = useLanguage();
 
     useEffect(() => {
@@ -51,8 +56,17 @@ function ReplayPage() {
 
     return (
         <Board 
+            key={id}
             gameMode="replay"
             replayHistory={replayHistory}
+            viewTeam={viewTeam}
+            setViewTeam={setViewTeam}
+            invertColor={invertColor}
+            setInvertColor={setInvertColor}
+            useRotatedPieces={useRotatedPieces}
+            setUseRotatedPieces={setUseRotatedPieces}
+            styleVariant={styleVariant}
+            setStyleVariant={setStyleVariant}
         />
     );
 }
