@@ -23,32 +23,35 @@ function Register() {
   };
 
   return (
-    <div style={{ width: '100%', maxWidth: 360, padding: 20, textAlign: 'center', margin: '0 auto' }}>
-      <h2>{t('register.title')}</h2>
-      {error && <p style={{ color: 'red' }}>{error}</p>}
-      <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 10, maxWidth: 300, margin: '0 auto' }}>
-        <input 
+    <div className="screen-centered auth-page">
+      <h2 className="auth-title">{t('register.title')}</h2>
+      {error && <p className="auth-error">{error}</p>}
+      <form onSubmit={handleSubmit} className="auth-form">
+        <input
+          className="auth-input"
           placeholder={t('register.idPlaceholder')}
-          value={username} 
-          onChange={e => setUsername(e.target.value)} 
-          required 
+          value={username}
+          onChange={e => setUsername(e.target.value)}
+          required
         />
-        <input 
-          type="password" 
+        <input
+          className="auth-input"
+          type="password"
           placeholder={t('register.passwordPlaceholder')}
-          value={password} 
-          onChange={e => setPassword(e.target.value)} 
-          required 
+          value={password}
+          onChange={e => setPassword(e.target.value)}
+          required
         />
-        <input 
+        <input
+          className="auth-input"
           placeholder={t('register.nicknamePlaceholder')}
-          value={nickname} 
-          onChange={e => setNickname(e.target.value)} 
-          required 
+          value={nickname}
+          onChange={e => setNickname(e.target.value)}
+          required
         />
-        <button type="submit">{t('register.submit')}</button>
+        <button type="submit" className="auth-submit-btn">{t('register.submit')}</button>
       </form>
-      <p>
+      <p className="auth-link-row">
         {t('register.haveAccount')} <Link to="/login">{t('register.goLogin')}</Link>
       </p>
     </div>

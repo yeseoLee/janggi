@@ -11,6 +11,165 @@
   padding: 20px;
 }
 
+.screen-centered {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: clamp(20px, 6vw, 52px);
+  text-align: center;
+}
+
+.auth-page {
+  gap: 14px;
+}
+
+.auth-title {
+  margin: 0;
+  font-size: clamp(1.9rem, 6vw, 2.5rem);
+}
+
+.auth-error {
+  margin: 0;
+  color: #ff7a7a;
+  font-size: 1rem;
+}
+
+.auth-form {
+  width: min(92vw, 420px);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin: 0 auto;
+}
+
+.auth-input {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 54px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  font-size: 1.05rem;
+  background: rgba(0, 0, 0, 0.28);
+  color: #f8f8f8;
+}
+
+.auth-submit-btn {
+  width: 100%;
+  min-height: 56px;
+  font-size: 1.08rem;
+  font-weight: 700;
+}
+
+.auth-link-row {
+  margin: 4px 0 0;
+  font-size: 1rem;
+}
+
+.initial-auth-page {
+  gap: 14px;
+}
+
+.initial-title {
+  margin: 0;
+  font-size: clamp(2.2rem, 9vw, 3.6rem);
+}
+
+.initial-auth-buttons {
+  width: min(90vw, 360px);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.initial-auth-buttons a {
+  width: 100%;
+}
+
+.initial-auth-buttons button {
+  width: 100%;
+  min-height: 56px;
+  font-size: 1.08rem;
+  font-weight: 700;
+}
+
+.menu-page {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: clamp(20px, 4vw, 30px);
+  padding: clamp(20px, 6vw, 50px);
+  position: relative;
+  text-align: center;
+}
+
+.menu-page-title {
+  margin: 0;
+  font-size: clamp(2rem, 6vw, 3rem);
+}
+
+.menu-user-card {
+  width: min(92vw, 390px);
+  background: #333;
+  padding: 24px 20px;
+  border-radius: 12px;
+  text-align: center;
+}
+
+.menu-user-card h3 {
+  margin: 0 0 14px;
+  font-size: 1.32rem;
+}
+
+.menu-user-card p {
+  margin: 10px 0;
+  font-size: 1.05rem;
+}
+
+.menu-account-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 14px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.menu-account-actions button {
+  min-height: 46px;
+  font-size: 0.95rem;
+}
+
+.menu-play-actions {
+  width: min(90vw, 360px);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.menu-play-actions button {
+  min-height: 56px;
+  font-size: 1.05rem;
+  font-weight: 700;
+}
+
+.menu-toast {
+  position: fixed;
+  bottom: 28px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 12px 16px;
+  border-radius: 10px;
+  background: rgba(20, 20, 24, 0.94);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: #f5f5f5;
+  font-size: 0.98rem;
+  z-index: 500;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.25);
+}
+
 .language-switcher {
   position: fixed;
   top: 14px;
