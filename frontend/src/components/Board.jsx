@@ -392,10 +392,15 @@ const Board = ({
                                    if (char === 'M') pieces.push(PIECE_TYPE.HORSE);
                                    else if (char === 'S') pieces.push(PIECE_TYPE.ELEPHANT);
                                }
-                               
+                              
                                return (
-                                   <button key={key} onClick={() => handleSetupSelect(label)} className="setup-btn">
-                                       <div className="setup-label">{setupLabel}</div>
+                                   <button
+                                       key={key}
+                                       onClick={() => handleSetupSelect(label)}
+                                       className="setup-btn"
+                                       aria-label={setupLabel}
+                                       title={setupLabel}
+                                   >
                                        <div className="setup-preview">
                                            {pieces.map((pType, idx) => (
                                                <div key={idx} className="setup-piece">

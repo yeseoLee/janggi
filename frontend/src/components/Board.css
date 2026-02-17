@@ -295,10 +295,10 @@
 
 .setup-btn {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   align-items: center;
   justify-content: center;
-  padding: 15px;
+  padding: 14px 10px;
   border: 2px solid #555;
   background: #333;
   border-radius: 8px;
@@ -315,24 +315,18 @@
   transform: translateY(-2px);
 }
 
-.setup-label {
-  margin-bottom: 10px;
-  font-size: 1rem;
-  font-weight: bold;
-}
-
 .setup-preview {
   display: flex;
   flex-direction: row;
-  gap: 4px;
+  gap: clamp(4px, 1.5vw, 8px);
   background: rgba(255, 255, 255, 0.1);
-  padding: 5px;
-  border-radius: 4px;
+  padding: clamp(6px, 1.8vw, 10px) clamp(7px, 2vw, 12px);
+  border-radius: 8px;
 }
 
 .setup-piece {
-  width: 30px;
-  height: 30px;
+  width: clamp(30px, 8vw, 40px);
+  height: clamp(30px, 8vw, 40px);
   display: flex;
   justify-content: center;
   align-items: center;
