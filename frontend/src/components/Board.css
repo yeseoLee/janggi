@@ -324,6 +324,22 @@
   border-radius: 8px;
 }
 
+.opponent-setup-display {
+  margin-bottom: 10px;
+  display: flex;
+  justify-content: center;
+}
+
+.opponent-setup-preview {
+  display: flex;
+  flex-direction: row;
+  gap: clamp(4px, 1.5vw, 8px);
+  background: rgba(242, 80, 80, 0.15);
+  border: 1px solid rgba(242, 80, 80, 0.5);
+  padding: clamp(6px, 1.8vw, 10px) clamp(7px, 2vw, 12px);
+  border-radius: 8px;
+}
+
 .setup-piece {
   width: clamp(30px, 8vw, 40px);
   height: clamp(30px, 8vw, 40px);

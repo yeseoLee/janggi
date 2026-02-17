@@ -331,6 +331,21 @@ const Board = ({
 
   const modeLabel = gameMode === 'online' ? t('board.mode.online') : gameMode === 'replay' ? t('board.mode.replay') : t('board.mode.ai');
   const displayMoveCount = gameMode === 'replay' ? Math.max((replayHistory?.length || 1) - 1, 0) : history.length;
+  const getSetupPieces = (setupTypeOrLabel) => {
+    if (!setupTypeOrLabel) return [];
+    const setupKey = Object.prototype.hasOwnProperty.call(SETUP_TYPES, setupTypeOrLabel)
+      ? setupTypeOrLabel
+      : Object.entries(SETUP_TYPES).find(([, value]) => value === setupTypeOrLabel)?.[0];
+    if (!setupKey) return [];
+    return [...setupKey]
+      .map((char) => {
+        if (char === 'M') return PIECE_TYPE.HORSE;
+        if (char === 'S') return PIECE_TYPE.ELEPHANT;
+        return null;
+      })
+      .filter(Boolean);
+  };
+  const opponentHanSetupPieces = getSetupPieces(hanSetup);
 
   return (
     <div className="janggi-game-container">
@@ -377,8 +392,19 @@ const Board = ({
                        
                        {/* Display Opponent's Choice if available */}
                        {gameState === 'SETUP_CHO' && hanSetup && (
-                           <div className="opponent-setup-display" style={{ marginBottom: '10px', color: '#f25050' }}>
-                               {t('board.opponentHanSelected', { setup: hanSetup })}
+                           <div className="opponent-setup-display">
+                               <div className="opponent-setup-preview">
+                                   {opponentHanSetupPieces.map((pType, idx) => (
+                                       <div key={`opponent-han-setup-${idx}`} className="setup-piece opponent-setup-piece">
+                                           <Piece
+                                               team={TEAM.HAN}
+                                               type={pType}
+                                               styleVariant={styleVariant}
+                                               inverted={invertColor}
+                                           />
+                                       </div>
+                                   ))}
+                               </div>
                            </div>
                        )}
 
@@ -387,11 +413,7 @@ const Board = ({
                                const setupTeam = gameState === 'SETUP_HAN' ? TEAM.HAN : TEAM.CHO;
                                const setupLabelKey = `board.setupTypes.${key}`;
                                const setupLabel = t(setupLabelKey) === setupLabelKey ? label : t(setupLabelKey);
-                               const pieces = [];
-                               for (const char of key) {
-                                   if (char === 'M') pieces.push(PIECE_TYPE.HORSE);
-                                   else if (char === 'S') pieces.push(PIECE_TYPE.ELEPHANT);
-                               }
+                               const pieces = getSetupPieces(key);
                               
                                return (
                                    <button
