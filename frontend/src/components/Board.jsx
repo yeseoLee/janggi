@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { io } from 'socket.io-client';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { useLanguage } from '../context/LanguageContext';
 import Piece from './Piece';
 import { TEAM, PIECE_TYPE, SETUP_TYPES, generateBoard } from '../game/constants';
 import { getValidMoves, getSafeMoves, isCheck, isCheckmate, calculateScore } from '../game/rules';
@@ -18,7 +19,12 @@ const Board = ({
     styleVariant, setStyleVariant 
 }) => {
   const { user } = useAuth();
+  const { t } = useLanguage();
   const navigate = useNavigate();
+  const tRef = useRef(t);
+  useEffect(() => {
+    tRef.current = t;
+  }, [t]);
   const files = 9;
   const ranks = 10;
   
@@ -113,14 +119,19 @@ const Board = ({
         });
 
         socket.on('pass_turn', () => {
-             alert(`Opponent Passed.`);
+             alert(tRef.current('board.alerts.opponentPassed'));
              setHistory(prev => [...prev, { board: board.map(row => [...row]), turn }]);
              setTurn(t => t === TEAM.CHO ? TEAM.HAN : TEAM.CHO);
         });
 
         socket.on('game_over', (data) => {
              setWinner(data.winner);
-             alert(data.type === 'resign' ? 'Opponent Resigned!' : 'Checkmate!');
+             const messageKey = data.type === 'resign'
+               ? 'board.alerts.opponentResigned'
+               : data.type === 'disconnect'
+                 ? 'board.alerts.disconnect'
+                 : 'board.alerts.checkmate';
+             alert(tRef.current(messageKey));
         });
 
         return () => {
@@ -282,14 +293,14 @@ const Board = ({
 
   const handleOnlinePass = () => {
       if (turn !== myTeam) return;
-      if (checkAlert === turn) { alert("Cannot pass in check!"); return; }
+      if (checkAlert === turn) { alert(t('board.alerts.cannotPassInCheck')); return; }
       socket.emit('pass', { room, team: myTeam });
       setHistory(prev => [...prev, { board: board.map(row => [...row]), turn }]);
       setTurn(t => t === TEAM.CHO ? TEAM.HAN : TEAM.CHO);
   };
   
   const handleResign = () => {
-      if (confirm("Are you sure you want to resign?")) {
+      if (confirm(t('board.alerts.confirmResign'))) {
           if (gameMode === 'online') {
               socket.emit('resign', { room, team: myTeam, history });
           } else {
@@ -318,7 +329,7 @@ const Board = ({
       }
   };
 
-  const modeLabel = gameMode === 'online' ? '온라인 대국' : gameMode === 'replay' ? '복기 모드' : '연습 대국';
+  const modeLabel = gameMode === 'online' ? t('board.mode.online') : gameMode === 'replay' ? t('board.mode.replay') : t('board.mode.ai');
   const displayMoveCount = gameMode === 'replay' ? Math.max((replayHistory?.length || 1) - 1, 0) : history.length;
 
   return (
@@ -327,15 +338,15 @@ const Board = ({
         {gameState === 'MATCHING' && (
             <div className="overlay matching-overlay">
                 <div className="spinner"></div>
-                <h2>Matching...</h2>
-                <p>Waiting for an opponent</p>
+                <h2>{t('board.matchingTitle')}</h2>
+                <p>{t('board.matchingSubtitle')}</p>
             </div>
         )}
         
         {/* WAITING OVERLAY (SETUP) */}
         {(gameState === 'WAITING_HAN' || gameState === 'WAITING_CHO') && (
             <div className="overlay waiting-overlay" style={{ background: 'rgba(0,0,0,0.85)', zIndex: 50 }}>
-                <h2>{gameState === 'WAITING_HAN' ? "Opponent (Han) is setting up..." : "Opponent (Cho) is setting up..."}</h2>
+                <h2>{gameState === 'WAITING_HAN' ? t('board.waitingHan') : t('board.waitingCho')}</h2>
                 <div className="spinner"></div>
             </div>
         )}
@@ -343,35 +354,39 @@ const Board = ({
         <div className="janggi-board-area">
             <div className="match-header">
                 <span className="match-title">{modeLabel}</span>
-                <span className="move-count">{displayMoveCount}수</span>
+                <span className="move-count">{displayMoveCount} {t('board.movesUnit')}</span>
             </div>
 
             <div className="janggi-board">
               {/* Winner Overlay */}
               {winner && (
                   <div className="overlay winner-overlay">
-                      <div>Game Over</div>
-                      <div style={{ color: winner === TEAM.CHO ? 'blue' : 'red' }}>{winner.toUpperCase()} WINS!</div>
-                      {gameMode !== 'online' && gameMode !== 'replay' && <button onClick={() => window.location.reload()}>Play Again</button>}
-                      <button onClick={() => navigate('/')}>Exit to Menu</button>
+                      <div>{t('board.gameOver')}</div>
+                      <div style={{ color: winner === TEAM.CHO ? 'blue' : 'red' }}>
+                        {t('board.wins', { team: t(`board.team.${winner}`) })}
+                      </div>
+                      {gameMode !== 'online' && gameMode !== 'replay' && <button onClick={() => window.location.reload()}>{t('board.playAgain')}</button>}
+                      <button onClick={() => navigate('/')}>{t('board.exitToMenu')}</button>
                   </div>
               )}
 
               {/* Setup Overlay */}
               {(gameState === 'SETUP_HAN' || gameState === 'SETUP_CHO') && (
                    <div className="overlay setup-overlay">
-                       <h2>{gameState === 'SETUP_HAN' ? "Han (Red) Setup - You" : "Cho (Blue) Setup - You"}</h2>
+                       <h2>{gameState === 'SETUP_HAN' ? t('board.setupHanTitle') : t('board.setupChoTitle')}</h2>
                        
                        {/* Display Opponent's Choice if available */}
                        {gameState === 'SETUP_CHO' && hanSetup && (
                            <div className="opponent-setup-display" style={{ marginBottom: '10px', color: '#f25050' }}>
-                               Opponent (Han) selected: <strong>{hanSetup}</strong>
+                               {t('board.opponentHanSelected', { setup: hanSetup })}
                            </div>
                        )}
 
                        <div className="setup-options">
                            {Object.entries(SETUP_TYPES).map(([key, label]) => {
                                const setupTeam = gameState === 'SETUP_HAN' ? TEAM.HAN : TEAM.CHO;
+                               const setupLabelKey = `board.setupTypes.${key}`;
+                               const setupLabel = t(setupLabelKey) === setupLabelKey ? label : t(setupLabelKey);
                                const pieces = [];
                                for (const char of key) {
                                    if (char === 'M') pieces.push(PIECE_TYPE.HORSE);
@@ -380,7 +395,7 @@ const Board = ({
                                
                                return (
                                    <button key={key} onClick={() => handleSetupSelect(label)} className="setup-btn">
-                                       <div className="setup-label">{label}</div>
+                                       <div className="setup-label">{setupLabel}</div>
                                        <div className="setup-preview">
                                            {pieces.map((pType, idx) => (
                                                <div key={idx} className="setup-piece">
@@ -403,7 +418,7 @@ const Board = ({
               {/* Check Notification */}
               {checkAlert && !winner && (gameState === 'PLAYING') && (
                   <div className="check-alert">
-                      JANGGUN! ({checkAlert.toUpperCase()})
+                      {t('board.checkAlert', { team: t(`board.team.${checkAlert}`) })}
                   </div>
               )}
 
@@ -462,40 +477,40 @@ const Board = ({
 
         <div className="janggi-sidebar">
             <div className="sidebar-top-row">
-                <button className="home-btn" onClick={() => navigate('/')}>Home</button>
+                <button className="home-btn" onClick={() => navigate('/')}>{t('board.home')}</button>
                 <span className="mode-chip">{modeLabel}</span>
             </div>
 
             <div className="score-board">
-                <div className="score-item cho">Cho: {scores.cho}</div>
-                <div className="score-item han">Han: {scores.han}</div>
+                <div className="score-item cho">{t('board.scoreCho', { score: scores.cho })}</div>
+                <div className="score-item han">{t('board.scoreHan', { score: scores.han })}</div>
             </div>
 
             <div className="game-status-bar">
                  <div className="turn-indicator">
-                     Turn: <span className={turn === TEAM.CHO ? 'turn-team cho' : 'turn-team han'}>{turn.toUpperCase()}</span>
+                     {t('board.turnLabel')}: <span className={turn === TEAM.CHO ? 'turn-team cho' : 'turn-team han'}>{t(`board.team.${turn}`)}</span>
                  </div>
 
                  {gameMode === 'replay' && (
-                    <div className="replay-step">Step: {replayStep + 1} / {replayHistory?.length}</div>
+                    <div className="replay-step">{t('board.step', { current: replayStep + 1, total: replayHistory?.length })}</div>
                  )}
                  
                  <div className="game-controls">
                      {gameMode === 'replay' ? (
                          <>
-                            <button onClick={handleReplayPrev} disabled={replayStep === 0}>Prev</button>
-                            <button onClick={handleReplayNext} disabled={!replayHistory || replayStep === replayHistory.length - 1}>Next</button>
+                            <button onClick={handleReplayPrev} disabled={replayStep === 0}>{t('board.prev')}</button>
+                            <button onClick={handleReplayNext} disabled={!replayHistory || replayStep === replayHistory.length - 1}>{t('board.next')}</button>
                          </>
                      ) : gameMode === 'online' ? (
                          <>
-                            <button onClick={handleOnlinePass} disabled={turn !== myTeam}>Pass</button>
-                            <button onClick={handleResign} className="resign-btn">Resign</button>
+                            <button onClick={handleOnlinePass} disabled={turn !== myTeam}>{t('board.pass')}</button>
+                            <button onClick={handleResign} className="resign-btn">{t('board.resign')}</button>
                          </>
                      ) : (
                          <>
-                            <button onClick={handleReset}>Reset</button>
-                            <button onClick={handleUndo}>Undo</button>
-                            <button onClick={handlePass}>Pass</button>
+                            <button onClick={handleReset}>{t('board.reset')}</button>
+                            <button onClick={handleUndo}>{t('board.undo')}</button>
+                            <button onClick={handlePass}>{t('board.pass')}</button>
                          </>
                      )}
                  </div>
@@ -503,14 +518,14 @@ const Board = ({
             
             <div className="settings-controls">
                 <div className="control-row select-row">
-                   <span className="control-label">View</span>
+                   <span className="control-label">{t('board.view')}</span>
                    <select value={viewTeam} onChange={(e) => setViewTeam(e.target.value)}>
-                      <option value={TEAM.CHO}>Cho</option>
-                      <option value={TEAM.HAN}>Han</option>
+                      <option value={TEAM.CHO}>{t('board.team.cho')}</option>
+                      <option value={TEAM.HAN}>{t('board.team.han')}</option>
                     </select>
                 </div>
-                <label className="control-row toggle-row"><input type="checkbox" checked={invertColor} onChange={(e) => setInvertColor(e.target.checked)} /> Invert Piece Color</label>
-                <label className="control-row toggle-row"><input type="checkbox" checked={useRotatedPieces} onChange={(e) => setUseRotatedPieces(e.target.checked)} /> Rotate Opponent Pieces</label>
+                <label className="control-row toggle-row"><input type="checkbox" checked={invertColor} onChange={(e) => setInvertColor(e.target.checked)} /> {t('board.invertPieceColor')}</label>
+                <label className="control-row toggle-row"><input type="checkbox" checked={useRotatedPieces} onChange={(e) => setUseRotatedPieces(e.target.checked)} /> {t('board.rotateOpponentPieces')}</label>
             </div>
         </div>
     </div>

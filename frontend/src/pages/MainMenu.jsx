@@ -1,49 +1,51 @@
 import { useAuth } from '../context/AuthContext';
 import { useNavigate, Link } from 'react-router-dom';
 import axios from 'axios';
+import { useLanguage } from '../context/LanguageContext';
 
 function MainMenu() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
+  const { t } = useLanguage();
 
   const handleWithdraw = async () => {
-      if (confirm('Are you sure you want to withdraw? This cannot be undone.')) {
+      if (confirm(t('menu.withdrawConfirm'))) {
           try {
               await axios.delete('/api/auth/me');
               logout();
-              alert('Account deleted.');
+              alert(t('menu.accountDeleted'));
           } catch (err) {
-              alert('Withdrawal failed');
+              alert(t('menu.withdrawFailed'));
           }
       }
   };
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 30, padding: 50 }}>
-      <h1>Janggi Online</h1>
+      <h1>{t('menu.title')}</h1>
       
       {user ? (
           <div style={{ background: '#333', padding: 20, borderRadius: 8, width: 300, textAlign: 'left' }}>
-              <h3>Welcome, {user.nickname}</h3>
-              <p>Rank: {user.rank}</p>
-              <p>Record: {user.wins}W - {user.losses}L</p>
-              <p>Coins: {user.coins}</p>
+              <h3>{t('menu.welcome', { nickname: user.nickname })}</h3>
+              <p>{t('menu.rank', { rank: user.rank })}</p>
+              <p>{t('menu.record', { wins: user.wins, losses: user.losses })}</p>
+              <p>{t('menu.coins', { coins: user.coins })}</p>
               <div style={{ display: 'flex', gap: 10, marginTop: 10 }}>
-                  <button onClick={logout} style={{ fontSize: '0.8em', background: '#555' }}>Logout</button>
-                  <button onClick={handleWithdraw} style={{ fontSize: '0.8em', background: '#a00' }}>Withdraw</button>
+                  <button onClick={logout} style={{ fontSize: '0.8em', background: '#555' }}>{t('menu.logout')}</button>
+                  <button onClick={handleWithdraw} style={{ fontSize: '0.8em', background: '#a00' }}>{t('menu.withdraw')}</button>
               </div>
           </div>
       ) : (
           <div>
-              <Link to="/login"><button>Login</button></Link>
-              <Link to="/register"><button style={{ marginLeft: 10 }}>Register</button></Link>
+              <Link to="/login"><button>{t('menu.login')}</button></Link>
+              <Link to="/register"><button style={{ marginLeft: 10 }}>{t('menu.register')}</button></Link>
           </div>
       )}
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 15, width: 250 }}>
-          <button onClick={() => navigate('/game?mode=ai')}>AI Match (Solo Play)</button>
-          <button onClick={() => navigate('/game?mode=online')}>Online Match</button>
-          <button onClick={() => navigate('/replay')}>Replay (Gibo)</button>
+          <button onClick={() => navigate('/game?mode=ai')}>{t('menu.aiMatch')}</button>
+          <button onClick={() => navigate('/game?mode=online')}>{t('menu.onlineMatch')}</button>
+          <button onClick={() => navigate('/replay')}>{t('menu.replay')}</button>
       </div>
     </div>
   );

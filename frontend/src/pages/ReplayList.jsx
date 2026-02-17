@@ -2,12 +2,14 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import '../components/Board.css'; // Reuse basic styles
+import { useLanguage } from '../context/LanguageContext';
 
 function ReplayList() {
     const [games, setGames] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
     const navigate = useNavigate();
+    const { t } = useLanguage();
 
     useEffect(() => {
         setLoading(true);
@@ -15,19 +17,25 @@ function ReplayList() {
             .then((res) => setGames(res.data))
             .catch((err) => {
                 console.error(err);
-                setError('기보 목록을 불러오지 못했습니다.');
+                setError(t('replay.listLoadFailed'));
             })
             .finally(() => setLoading(false));
-    }, []);
+    }, [t]);
+
+    const getResultLabel = (resultType) => {
+        const key = `replay.result.${resultType || 'unknown'}`;
+        const translated = t(key);
+        return translated === key ? t('replay.result.unknown') : translated;
+    };
 
     return (
         <div className="replay-list-container" style={{ color: 'white', padding: '20px', textAlign: 'center' }}>
-            <h1>Game Replays (Gibo)</h1>
-            <button onClick={() => navigate('/')} style={{ marginBottom: '20px', padding: '10px' }}>Back to Main Menu</button>
+            <h1>{t('replay.listTitle')}</h1>
+            <button onClick={() => navigate('/')} style={{ marginBottom: '20px', padding: '10px' }}>{t('replay.backToMain')}</button>
             
-            {loading && <p>Loading...</p>}
+            {loading && <p>{t('replay.loading')}</p>}
             {!loading && error && <p>{error}</p>}
-            {!loading && !error && games.length === 0 && <p>저장된 기보가 없습니다.</p>}
+            {!loading && !error && games.length === 0 && <p>{t('replay.noGames')}</p>}
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', alignItems: 'center' }}>
                 {games.map(game => (
@@ -42,20 +50,20 @@ function ReplayList() {
                              cursor: 'pointer',
                              display: 'flex',
                              justifyContent: 'space-between'
-                         }}>
+                        }}>
                         <div>
-                            <span style={{ color: '#5078f2' }}>{game.cho_name || (game.winner_team === 'cho' ? game.winner_name : game.loser_name)} (Cho)</span>
+                            <span style={{ color: '#5078f2' }}>{game.cho_name || (game.winner_team === 'cho' ? game.winner_name : game.loser_name)} ({t('board.team.cho')})</span>
                             {' vs '}
-                            <span style={{ color: '#f25050' }}>{game.han_name || (game.winner_team === 'han' ? game.winner_name : game.loser_name)} (Han)</span>
+                            <span style={{ color: '#f25050' }}>{game.han_name || (game.winner_team === 'han' ? game.winner_name : game.loser_name)} ({t('board.team.han')})</span>
                         </div>
                         <div>
-                            Winner: <strong>{game.winner_name}</strong> ({game.winner_team?.toUpperCase()})
+                            {t('replay.winner')}: <strong>{game.winner_name}</strong> ({game.winner_team?.toUpperCase()})
                         </div>
                         <div>
-                            Moves: <strong>{game.move_count ?? 0}</strong>
+                            {t('replay.moves')}: <strong>{game.move_count ?? 0}</strong>
                         </div>
                         <div>
-                            End: <strong>{game.result_type || 'unknown'}</strong>
+                            {t('replay.end')}: <strong>{getResultLabel(game.result_type)}</strong>
                         </div>
                         <div style={{ fontSize: '0.8em', color: '#ccc' }}>
                             {new Date(game.played_at).toLocaleString()}

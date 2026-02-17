@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import axios from 'axios';
 import Board from '../components/Board';
 import { toReplayFrames } from '../game/replay';
+import { useLanguage } from '../context/LanguageContext';
 
 function ReplayPage() {
     const { id } = useParams();
@@ -10,6 +11,7 @@ function ReplayPage() {
     const [gameData, setGameData] = useState(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
+    const { t } = useLanguage();
 
     useEffect(() => {
         setLoading(true);
@@ -18,20 +20,20 @@ function ReplayPage() {
             .then((res) => setGameData(res.data))
             .catch((err) => {
                 console.error(err);
-                setError('기보를 불러오지 못했습니다.');
+                setError(t('replay.detailLoadFailed'));
             })
             .finally(() => setLoading(false));
-    }, [id]);
+    }, [id, t]);
 
     if (loading) {
-        return <div style={{ color: 'white', padding: '20px' }}>Loading replay...</div>;
+        return <div style={{ color: 'white', padding: '20px' }}>{t('replay.detailLoading')}</div>;
     }
 
     if (error) {
         return (
             <div style={{ color: 'white', padding: '20px' }}>
                 <p>{error}</p>
-                <button onClick={() => navigate('/replay')}>기보 목록으로</button>
+                <button onClick={() => navigate('/replay')}>{t('replay.backToList')}</button>
             </div>
         );
     }
@@ -41,8 +43,8 @@ function ReplayPage() {
     if (!replayHistory || replayHistory.length === 0) {
         return (
             <div style={{ color: 'white', padding: '20px' }}>
-                <p>재생 가능한 기보 데이터가 없습니다.</p>
-                <button onClick={() => navigate('/replay')}>기보 목록으로</button>
+                <p>{t('replay.noPlayableData')}</p>
+                <button onClick={() => navigate('/replay')}>{t('replay.backToList')}</button>
             </div>
         );
     }

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import axios from 'axios';
 import { useNavigate, Link } from 'react-router-dom';
+import { useLanguage } from '../context/LanguageContext';
 
 function Register() {
   const [username, setUsername] = useState('');
@@ -8,46 +9,47 @@ function Register() {
   const [nickname, setNickname] = useState('');
   const [error, setError] = useState('');
   const navigate = useNavigate();
+  const { t } = useLanguage();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
       await axios.post('/api/auth/register', { username, password, nickname });
-      alert('Registration successful! Please login.');
+      alert(t('register.success'));
       navigate('/login');
     } catch (err) {
-      setError(err.response?.data?.error || 'Registration failed');
+      setError(err.response?.data?.error || t('register.failed'));
     }
   };
 
   return (
     <div style={{ padding: 20 }}>
-      <h2>Register</h2>
+      <h2>{t('register.title')}</h2>
       {error && <p style={{ color: 'red' }}>{error}</p>}
       <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 10, maxWidth: 300, margin: '0 auto' }}>
         <input 
-          placeholder="ID" 
+          placeholder={t('register.idPlaceholder')}
           value={username} 
           onChange={e => setUsername(e.target.value)} 
           required 
         />
         <input 
           type="password" 
-          placeholder="Password" 
+          placeholder={t('register.passwordPlaceholder')}
           value={password} 
           onChange={e => setPassword(e.target.value)} 
           required 
         />
         <input 
-          placeholder="Nickname" 
+          placeholder={t('register.nicknamePlaceholder')}
           value={nickname} 
           onChange={e => setNickname(e.target.value)} 
           required 
         />
-        <button type="submit">Sign Up</button>
+        <button type="submit">{t('register.submit')}</button>
       </form>
       <p>
-        Already have an account? <Link to="/login">Login</Link>
+        {t('register.haveAccount')} <Link to="/login">{t('register.goLogin')}</Link>
       </p>
     </div>
   );

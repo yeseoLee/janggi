@@ -2,6 +2,7 @@ import { useState } from 'react';
 import axios from 'axios';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { useLanguage } from '../context/LanguageContext';
 
 function Login() {
   const [username, setUsername] = useState('');
@@ -9,42 +10,41 @@ function Login() {
   const [error, setError] = useState('');
   const { login } = useAuth();
   const navigate = useNavigate();
+  const { t } = useLanguage();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      // In Docker/Production, /api is proxied. In dev, we need to ensure proxy setup or full URL.
-      // Vite proxy is usually set up in vite.config.js for dev.
       const res = await axios.post('/api/auth/login', { username, password });
       login(res.data.token, res.data.user);
       navigate('/');
     } catch (err) {
-      setError(err.response?.data?.error || 'Login failed');
+      setError(err.response?.data?.error || t('login.failed'));
     }
   };
 
   return (
     <div style={{ padding: 20 }}>
-      <h2>Login</h2>
+      <h2>{t('login.title')}</h2>
       {error && <p style={{ color: 'red' }}>{error}</p>}
       <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 10, maxWidth: 300, margin: '0 auto' }}>
         <input 
-          placeholder="ID" 
+          placeholder={t('login.idPlaceholder')}
           value={username} 
           onChange={e => setUsername(e.target.value)} 
           required 
         />
         <input 
           type="password" 
-          placeholder="Password" 
+          placeholder={t('login.passwordPlaceholder')}
           value={password} 
           onChange={e => setPassword(e.target.value)} 
           required 
         />
-        <button type="submit">Log In</button>
+        <button type="submit">{t('login.submit')}</button>
       </form>
       <p>
-        Don't have an account? <Link to="/register">Register</Link>
+        {t('login.noAccount')} <Link to="/register">{t('login.goRegister')}</Link>
       </p>
     </div>
   );

@@ -10,6 +10,42 @@
   padding: 20px;
 }
 
+.language-switcher {
+  position: fixed;
+  top: 14px;
+  right: 14px;
+  z-index: 300;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 12px;
+  background: rgba(18, 20, 26, 0.88);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  backdrop-filter: blur(6px);
+}
+
+.language-label {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #dfe4ef;
+}
+
+.language-btn {
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.08);
+  color: #f8f8f8;
+  padding: 6px 10px;
+  border-radius: 8px;
+  font-size: 0.8rem;
+  line-height: 1;
+}
+
+.language-btn.active {
+  border-color: #ffa23c;
+  color: #ffbf75;
+}
+
 .controls {
   margin-bottom: 20px;
   display: flex;

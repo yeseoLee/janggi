@@ -6,6 +6,7 @@ import MainMenu from './pages/MainMenu';
 import GamePage from './pages/GamePage';
 import ReplayList from './pages/ReplayList';
 import ReplayPage from './pages/ReplayPage';
+import LanguageSelector from './components/LanguageSelector';
 import './App.css';
 
 // Protected Route Component
@@ -23,6 +24,7 @@ function App() {
     <AuthProvider>
         <BrowserRouter>
             <div className="App">
+                <LanguageSelector />
                 <Routes>
                     <Route path="/login" element={<Login />} />
                     <Route path="/register" element={<Register />} />
