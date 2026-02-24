@@ -1251,6 +1251,37 @@
 
 .profile-settings-item-left span:last-child { font-weight: 500; }
 
+.profile-settings-item.language-row { cursor: default; }
+.profile-settings-item.language-row:hover { background: none; }
+
+.profile-lang-toggle {
+  display: flex;
+  gap: 4px;
+  background: var(--color-bg);
+  border-radius: 8px;
+  padding: 3px;
+}
+
+.profile-lang-btn {
+  padding: 6px 14px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--color-text-muted);
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-family: inherit;
+  white-space: nowrap;
+}
+
+.profile-lang-btn.active {
+  background: var(--color-primary);
+  color: white;
+  box-shadow: 0 1px 3px rgba(217, 119, 38, 0.3);
+}
+
 .profile-settings-item.danger .material-icons-round,
 .profile-settings-item.danger span { color: var(--color-danger); }
 .profile-settings-item.danger:hover { background: #FEF2F2; }
@@ -1302,42 +1333,4 @@
 }
 
 /* ===== Language Switcher (updated) ===== */
-.language-switcher {
-  position: fixed;
-  top: 12px;
-  right: 12px;
-  z-index: 300;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 8px;
-  border-radius: var(--radius-sm);
-  background: rgba(255, 255, 255, 0.9);
-  border: 1px solid var(--color-border);
-  backdrop-filter: blur(6px);
-  box-shadow: var(--shadow-sm);
-}
-
-.language-label {
-  font-size: 0.72rem;
-  font-weight: 600;
-  color: var(--color-text-secondary);
-}
-
-.language-btn {
-  border: 1px solid var(--color-border);
-  background: var(--color-surface);
-  color: var(--color-text-secondary);
-  padding: 4px 8px;
-  border-radius: 6px;
-  font-size: 0.72rem;
-  line-height: 1;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.language-btn.active {
-  border-color: var(--color-primary);
-  color: var(--color-primary);
-  background: rgba(217, 119, 38, 0.06);
-}
+/* Language switcher removed from global — now in Profile page only */

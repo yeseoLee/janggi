@@ -8,7 +8,7 @@ import BottomNav from '../components/BottomNav';
 function Profile() {
   const { user, logout, refreshUser } = useAuth();
   const navigate = useNavigate();
-  const { t } = useLanguage();
+  const { t, language, setLanguage } = useLanguage();
   const [toastMessage, setToastMessage] = useState('');
   const [isRecharging, setIsRecharging] = useState(false);
   const toastTimerRef = useRef(null);
@@ -164,6 +164,26 @@ function Profile() {
 
         {/* Settings */}
         <div className="profile-settings-list">
+          <div className="profile-settings-item language-row">
+            <div className="profile-settings-item-left">
+              <span className="material-icons-round">language</span>
+              <span>{t('profile.language')}</span>
+            </div>
+            <div className="profile-lang-toggle">
+              <button
+                className={`profile-lang-btn ${language === 'ko' ? 'active' : ''}`}
+                onClick={() => setLanguage('ko')}
+              >
+                한국어
+              </button>
+              <button
+                className={`profile-lang-btn ${language === 'en' ? 'active' : ''}`}
+                onClick={() => setLanguage('en')}
+              >
+                English
+              </button>
+            </div>
+          </div>
           <button className="profile-settings-item" onClick={() => navigate('/records')}>
             <div className="profile-settings-item-left">
               <span className="material-icons-round">history</span>

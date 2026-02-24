@@ -75,10 +75,11 @@ const Board = ({
   const [opponentInfo, setOpponentInfo] = useState(null);
 
   // States
-  const [history, setHistory] = useState([]); 
+  const [history, setHistory] = useState([]);
   const [winner, setWinner] = useState(null);
-  const [checkAlert, setCheckAlert] = useState(null); 
-  const [scores, setScores] = useState({ cho: 72, han: 73.5 }); 
+  const [checkAlert, setCheckAlert] = useState(null);
+  const [checkAlertVisible, setCheckAlertVisible] = useState(false);
+  const [scores, setScores] = useState({ cho: 72, han: 73.5 });
   const [aiThinking, setAiThinking] = useState(false);
   const aiThinkingRef = useRef(false);
   const [aiSearchDepth, setAiSearchDepth] = useState(AI_DEFAULT_DEPTH);
@@ -410,6 +411,16 @@ const Board = ({
     }
   }, [board, turn, gameState]);
 
+  // Auto-hide check alert after 1 second
+  useEffect(() => {
+    if (checkAlert) {
+      setCheckAlertVisible(true);
+      const timer = setTimeout(() => setCheckAlertVisible(false), 1000);
+      return () => clearTimeout(timer);
+    }
+    setCheckAlertVisible(false);
+  }, [checkAlert]);
+
   // Handle cell click
   const handleCellClick = (r, c) => {
     if (gameMode === 'replay') return;
@@ -636,6 +647,107 @@ const Board = ({
             </div>
         )}
 
+        {/* SETUP OVERLAY (fullscreen, light theme) */}
+        {(gameState === 'SELECT_SIDE' || gameState === 'SETUP_HAN' || gameState === 'SETUP_CHO') && (
+            <div className="setup-fullscreen">
+                <header className="setup-fs-header">
+                    <button className="setup-fs-back" onClick={() => navigate('/')}>
+                        <span className="material-icons-round">arrow_back</span>
+                    </button>
+                    <h1 className="setup-fs-title">
+                        {gameState === 'SELECT_SIDE' ? t('board.selectSideTitle') : (gameState === 'SETUP_HAN' ? t('board.setupHanTitle') : t('board.setupChoTitle'))}
+                    </h1>
+                    <div style={{ width: 40 }} />
+                </header>
+
+                <div className="setup-fs-content">
+                    {gameState === 'SELECT_SIDE' ? (
+                        <>
+                            <p className="setup-fs-subtitle">{t('board.selectSideSubtitle')}</p>
+                            <div className="setup-fs-card">
+                                <div className="setup-fs-card-header">
+                                    <span className="material-icons-round">smart_toy</span>
+                                    <span>{t('board.aiLevelLabel')}</span>
+                                </div>
+                                <div className="setup-fs-slider-row">
+                                    <input
+                                        className="setup-fs-slider"
+                                        type="range"
+                                        min={AI_MIN_DEPTH}
+                                        max={AI_MAX_DEPTH}
+                                        step={1}
+                                        value={aiSearchDepth}
+                                        onChange={(e) => handleAiDepthChange(e.target.value)}
+                                    />
+                                    <span className="setup-fs-depth-value">{t('board.aiLevelDepthValue', { depth: aiSearchDepth })}</span>
+                                </div>
+                                <div className="setup-fs-presets">
+                                    {AI_DEPTH_PRESETS.map((depth) => (
+                                        <button
+                                            key={`ai-depth-${depth}`}
+                                            type="button"
+                                            className={`setup-fs-preset-btn ${aiSearchDepth === depth ? 'active' : ''}`}
+                                            onClick={() => handleAiDepthChange(depth)}
+                                        >
+                                            {t('board.aiLevelPreset', { depth })}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                            <div className="setup-fs-sides">
+                                <button type="button" className="setup-fs-side-btn cho" onClick={() => handleAiSideSelect(TEAM.CHO)}>
+                                    <span className="setup-fs-side-icon cho">楚</span>
+                                    <span className="setup-fs-side-team">{t('board.team.cho')}</span>
+                                    <span className="setup-fs-side-desc">{t('board.selectSideCho')}</span>
+                                </button>
+                                <button type="button" className="setup-fs-side-btn han" onClick={() => handleAiSideSelect(TEAM.HAN)}>
+                                    <span className="setup-fs-side-icon han">漢</span>
+                                    <span className="setup-fs-side-team">{t('board.team.han')}</span>
+                                    <span className="setup-fs-side-desc">{t('board.selectSideHan')}</span>
+                                </button>
+                            </div>
+                        </>
+                    ) : (
+                        <>
+                            {isAiSetupPhase && (
+                                <p className="setup-fs-subtitle">{isSelectingAiSetup ? t('board.setupAiSubtitle') : t('board.setupMySubtitle')}</p>
+                            )}
+                            {opponentSetupPieces.length > 0 && (
+                                <div className="setup-fs-opponent-preview">
+                                    <div className="setup-fs-opponent-pieces">
+                                        {opponentSetupPieces.map((pType, idx) => (
+                                            <div key={`opponent-setup-${idx}`} className="setup-fs-piece">
+                                                <Piece team={opponentSetupTeam} type={pType} styleVariant={styleVariant} inverted={invertColor} />
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                            <div className="setup-fs-options">
+                                {Object.entries(SETUP_TYPES).map(([key, label]) => {
+                                    const setupLabelKey = `board.setupTypes.${key}`;
+                                    const setupLabel = t(setupLabelKey) === setupLabelKey ? label : t(setupLabelKey);
+                                    const pieces = getSetupPieces(key);
+                                    return (
+                                        <button key={key} onClick={() => handleSetupSelect(label)} className="setup-fs-option-btn" aria-label={setupLabel} title={setupLabel}>
+                                            <div className="setup-fs-option-pieces">
+                                                {pieces.map((pType, idx) => (
+                                                    <div key={idx} className="setup-fs-piece">
+                                                        <Piece team={setupTeam} type={pType} styleVariant={styleVariant} inverted={invertColor} />
+                                                    </div>
+                                                ))}
+                                            </div>
+                                            <span className="setup-fs-option-label">{setupLabel}</span>
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        </>
+                    )}
+                </div>
+            </div>
+        )}
+
         {/* Header */}
         <header className="game-header">
             <button className="game-header-btn" onClick={() => navigate('/')}>
@@ -699,93 +811,8 @@ const Board = ({
                         </div>
                     )}
 
-                    {/* Setup Overlay */}
-                    {(gameState === 'SELECT_SIDE' || gameState === 'SETUP_HAN' || gameState === 'SETUP_CHO') && (
-                        <div className="overlay setup-overlay">
-                            {gameState === 'SELECT_SIDE' ? (
-                                <>
-                                    <h2>{t('board.selectSideTitle')}</h2>
-                                    <p>{t('board.selectSideSubtitle')}</p>
-                                    <div className="ai-level-config">
-                                        <div className="ai-level-header">
-                                            <span>{t('board.aiLevelLabel')}</span>
-                                            <span>{t('board.aiLevelDepthValue', { depth: aiSearchDepth })}</span>
-                                        </div>
-                                        <input
-                                            className="ai-level-slider"
-                                            type="range"
-                                            min={AI_MIN_DEPTH}
-                                            max={AI_MAX_DEPTH}
-                                            step={1}
-                                            value={aiSearchDepth}
-                                            onChange={(e) => handleAiDepthChange(e.target.value)}
-                                        />
-                                        <div className="ai-level-presets">
-                                            {AI_DEPTH_PRESETS.map((depth) => (
-                                                <button
-                                                    key={`ai-depth-${depth}`}
-                                                    type="button"
-                                                    className={`ai-level-preset-btn ${aiSearchDepth === depth ? 'active' : ''}`}
-                                                    onClick={() => handleAiDepthChange(depth)}
-                                                >
-                                                    {t('board.aiLevelPreset', { depth })}
-                                                </button>
-                                            ))}
-                                        </div>
-                                    </div>
-                                    <div className="side-select-options">
-                                        <button type="button" className="side-select-btn cho" onClick={() => handleAiSideSelect(TEAM.CHO)}>
-                                            <span className="side-select-team">{t('board.team.cho')}</span>
-                                            <span className="side-select-desc">{t('board.selectSideCho')}</span>
-                                        </button>
-                                        <button type="button" className="side-select-btn han" onClick={() => handleAiSideSelect(TEAM.HAN)}>
-                                            <span className="side-select-team">{t('board.team.han')}</span>
-                                            <span className="side-select-desc">{t('board.selectSideHan')}</span>
-                                        </button>
-                                    </div>
-                                </>
-                            ) : (
-                                <>
-                                    <h2>{gameState === 'SETUP_HAN' ? t('board.setupHanTitle') : t('board.setupChoTitle')}</h2>
-                                    {isAiSetupPhase && (
-                                        <p>{isSelectingAiSetup ? t('board.setupAiSubtitle') : t('board.setupMySubtitle')}</p>
-                                    )}
-                                    {opponentSetupPieces.length > 0 && (
-                                        <div className="opponent-setup-display">
-                                            <div className="opponent-setup-preview">
-                                                {opponentSetupPieces.map((pType, idx) => (
-                                                    <div key={`opponent-setup-${idx}`} className="setup-piece opponent-setup-piece">
-                                                        <Piece team={opponentSetupTeam} type={pType} styleVariant={styleVariant} inverted={invertColor} />
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        </div>
-                                    )}
-                                    <div className="setup-options">
-                                        {Object.entries(SETUP_TYPES).map(([key, label]) => {
-                                            const setupLabelKey = `board.setupTypes.${key}`;
-                                            const setupLabel = t(setupLabelKey) === setupLabelKey ? label : t(setupLabelKey);
-                                            const pieces = getSetupPieces(key);
-                                            return (
-                                                <button key={key} onClick={() => handleSetupSelect(label)} className="setup-btn" aria-label={setupLabel} title={setupLabel}>
-                                                    <div className="setup-preview">
-                                                        {pieces.map((pType, idx) => (
-                                                            <div key={idx} className="setup-piece">
-                                                                <Piece team={setupTeam} type={pType} styleVariant={styleVariant} inverted={invertColor} />
-                                                            </div>
-                                                        ))}
-                                                    </div>
-                                                </button>
-                                            );
-                                        })}
-                                    </div>
-                                </>
-                            )}
-                        </div>
-                    )}
-
                     {/* Check Notification */}
-                    {checkAlert && !winner && (gameState === 'PLAYING') && (
+                    {checkAlertVisible && !winner && (gameState === 'PLAYING') && (
                         <div className="check-popup">
                             <h2>{t('board.checkAlert', { team: t(`board.team.${checkAlert}`) })}</h2>
                         </div>

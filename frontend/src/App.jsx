@@ -7,7 +7,6 @@ import GamePage from './pages/GamePage';
 import ReplayList from './pages/ReplayList';
 import ReplayPage from './pages/ReplayPage';
 import Profile from './pages/Profile';
-import LanguageSelector from './components/LanguageSelector';
 import './App.css';
 
 const ProtectedRoute = ({ children }) => {
@@ -23,7 +22,6 @@ function App() {
     <AuthProvider>
         <BrowserRouter>
             <div className="App">
-                <LanguageSelector />
                 <Routes>
                     <Route path="/login" element={<Login />} />
                     <Route path="/register" element={<Register />} />
