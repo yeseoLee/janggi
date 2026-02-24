@@ -24,30 +24,68 @@ function Login() {
   };
 
   return (
-    <div className="screen-centered auth-page">
-      <h2 className="auth-title">{t('login.title')}</h2>
-      {error && <p className="auth-error">{error}</p>}
-      <form onSubmit={handleSubmit} className="auth-form">
-        <input
-          className="auth-input"
-          placeholder={t('login.idPlaceholder')}
-          value={username}
-          onChange={e => setUsername(e.target.value)}
-          required
-        />
-        <input
-          className="auth-input"
-          type="password"
-          placeholder={t('login.passwordPlaceholder')}
-          value={password}
-          onChange={e => setPassword(e.target.value)}
-          required
-        />
-        <button type="submit" className="auth-submit-btn">{t('login.submit')}</button>
-      </form>
-      <p className="auth-link-row">
-        {t('login.noAccount')} <Link to="/register">{t('login.goRegister')}</Link>
-      </p>
+    <div className="auth-page">
+      <div className="auth-lattice-bg" />
+
+      <div className="auth-logo">
+        <div className="auth-logo-diamond">
+          <div className="auth-logo-diamond-bg" />
+          <div className="auth-logo-diamond-inner" />
+          <span className="auth-logo-char">漢</span>
+        </div>
+        <h1>{t('login.appTitle')}</h1>
+        <p>Master Janggi</p>
+      </div>
+
+      <div className="auth-form-card">
+        {error && <div className="auth-error">{error}</div>}
+        <form onSubmit={handleSubmit}>
+          <div className="auth-field">
+            <label>{t('login.idLabel')}</label>
+            <div className="auth-input-wrapper">
+              <span className="material-icons-round">person</span>
+              <input
+                className="auth-input"
+                placeholder={t('login.idPlaceholder')}
+                value={username}
+                onChange={e => setUsername(e.target.value)}
+                required
+              />
+            </div>
+          </div>
+
+          <div className="auth-field">
+            <label>{t('login.passwordLabel')}</label>
+            <div className="auth-input-wrapper">
+              <span className="material-icons-round">lock</span>
+              <input
+                className="auth-input"
+                type="password"
+                placeholder="••••••••"
+                value={password}
+                onChange={e => setPassword(e.target.value)}
+                required
+              />
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', paddingTop: '4px' }}>
+            <button type="submit" className="auth-submit-btn">
+              {t('login.submit')}
+            </button>
+
+            <div className="auth-divider">
+              <span>{t('login.or')}</span>
+            </div>
+
+            <Link to="/register" className="auth-secondary-btn">
+              {t('login.goRegister')}
+            </Link>
+          </div>
+        </form>
+      </div>
+
+      <p className="auth-footer">© 2024 Janggi Master. All rights reserved.</p>
     </div>
   );
 }
