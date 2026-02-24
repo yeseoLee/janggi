@@ -3,6 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import { useNavigate, Link } from 'react-router-dom';
 import axios from 'axios';
 import { useLanguage } from '../context/LanguageContext';
+import BottomNav from '../components/BottomNav';
 
 const GUP_PATTERN = /^([1-9]|1[0-8])급$/;
 const DAN_PATTERN = /^([1-9])단$/;
@@ -26,10 +27,8 @@ const getRankThreshold = (rank) => {
 const getRankTier = (rank) => {
   const gupMatch = rank?.match(GUP_PATTERN);
   if (gupMatch) return 18 - Number(gupMatch[1]);
-
   const danMatch = rank?.match(DAN_PATTERN);
   if (danMatch) return 17 + Number(danMatch[1]);
-
   return 0;
 };
 
@@ -40,12 +39,8 @@ const buildRankProgress = (rank, rankWins, rankLosses) => {
   const tier = getRankTier(rank);
   const canPromote = tier < 26;
   const canDemote = tier > 0;
-
   return {
-    wins,
-    losses,
-    canPromote,
-    canDemote,
+    wins, losses, canPromote, canDemote,
     winsRemaining: canPromote ? Math.max(0, threshold - wins) : 0,
     lossesRemaining: canDemote ? Math.max(0, threshold - losses) : 0,
   };
@@ -56,17 +51,23 @@ function MainMenu() {
   const navigate = useNavigate();
   const { t } = useLanguage();
   const [toastMessage, setToastMessage] = useState('');
-  const [isRecharging, setIsRecharging] = useState(false);
   const [isStartingAi, setIsStartingAi] = useState(false);
+  const [recentGames, setRecentGames] = useState([]);
   const toastTimerRef = useRef(null);
 
   useEffect(() => {
     return () => {
-      if (toastTimerRef.current) {
-        clearTimeout(toastTimerRef.current);
-      }
+      if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
     };
   }, []);
+
+  useEffect(() => {
+    if (user) {
+      axios.get('/api/games')
+        .then(res => setRecentGames((res.data || []).slice(0, 3)))
+        .catch(() => {});
+    }
+  }, [user]);
 
   const rankProgress = useMemo(
     () => buildRankProgress(user?.rank, user?.rank_wins, user?.rank_losses),
@@ -76,45 +77,12 @@ function MainMenu() {
   const showToast = (message) => {
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
     setToastMessage(message);
-    toastTimerRef.current = setTimeout(() => {
-      setToastMessage('');
-    }, 2200);
-  };
-
-  const handleWithdraw = async () => {
-      if (confirm(t('menu.withdrawConfirm'))) {
-          try {
-              await axios.delete('/api/auth/me');
-              logout();
-              alert(t('menu.accountDeleted'));
-          } catch {
-              alert(t('menu.withdrawFailed'));
-          }
-      }
-  };
-
-  const handleRechargeCoins = async () => {
-    if (!user || isRecharging) return;
-    setIsRecharging(true);
-    try {
-      // TODO(next): after coin grant, chain ad-link navigation and daily-limit feedback in this flow.
-      const response = await axios.post('/api/coins/recharge');
-      await refreshUser();
-      showToast(t('menu.rechargeSuccess', { amount: response.data?.added ?? 10 }));
-    } catch {
-      showToast(t('menu.rechargeFailed'));
-    } finally {
-      setIsRecharging(false);
-    }
+    toastTimerRef.current = setTimeout(() => setToastMessage(''), 2200);
   };
 
   const handleAiMatchStart = async () => {
     if (isStartingAi) return;
-    if (!user) {
-      navigate('/login');
-      return;
-    }
-
+    if (!user) { navigate('/login'); return; }
     setIsStartingAi(true);
     try {
       await axios.post('/api/coins/spend-ai-match');
@@ -131,61 +99,175 @@ function MainMenu() {
     }
   };
 
+  const winRate = user && (user.wins + user.losses > 0)
+    ? ((user.wins / (user.wins + user.losses)) * 100).toFixed(1)
+    : '0.0';
+
   if (!user) {
     return (
-      <div className="screen-centered initial-auth-page">
-        <h1 className="initial-title">{t('menu.titleSimple')}</h1>
-        <div className="initial-auth-buttons">
-          <Link to="/login"><button>{t('menu.login')}</button></Link>
-          <Link to="/register"><button>{t('menu.register')}</button></Link>
+      <div className="auth-page">
+        <div className="auth-lattice-bg" />
+        <div className="auth-logo">
+          <div className="auth-logo-diamond">
+            <div className="auth-logo-diamond-bg" />
+            <div className="auth-logo-diamond-inner" />
+            <span className="auth-logo-char">漢</span>
+          </div>
+          <h1>{t('menu.titleSimple')}</h1>
+          <p>Master Janggi</p>
+        </div>
+        <div className="auth-form-card" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          <Link to="/login" className="auth-submit-btn" style={{ textAlign: 'center', textDecoration: 'none' }}>
+            {t('menu.login')}
+          </Link>
+          <Link to="/register" className="auth-secondary-btn">
+            {t('menu.register')}
+          </Link>
         </div>
       </div>
     );
   }
 
+  const getResultLabel = (game) => {
+    if (!game.winner_name) return { type: 'draw', label: t('records.draw') };
+    if (game.winner_name === user.nickname) return { type: 'win', label: t('records.win') };
+    return { type: 'loss', label: t('records.loss') };
+  };
+
+  const getTeamChar = (game) => {
+    const isCho = (game.cho_name === user.nickname) ||
+      (game.winner_team === 'cho' && game.winner_name === user.nickname) ||
+      (game.winner_team === 'han' && game.winner_name !== user.nickname);
+    return isCho ? { char: '楚', team: 'cho' } : { char: '漢', team: 'han' };
+  };
+
+  const getOpponentName = (game) => {
+    const choName = game.cho_name || (game.winner_team === 'cho' ? game.winner_name : game.loser_name);
+    const hanName = game.han_name || (game.winner_team === 'han' ? game.winner_name : game.loser_name);
+    if (choName === user.nickname) return hanName || 'AI';
+    return choName || 'AI';
+  };
+
+  const formatTimeAgo = (dateStr) => {
+    if (!dateStr) return '';
+    const diff = Date.now() - new Date(dateStr).getTime();
+    const mins = Math.floor(diff / 60000);
+    if (mins < 1) return t('records.justNow');
+    if (mins < 60) return t('records.timeAgoMinutes', { count: mins });
+    const hours = Math.floor(mins / 60);
+    if (hours < 24) return t('records.timeAgoHours', { count: hours });
+    return t('records.timeAgoDays', { count: Math.floor(hours / 24) });
+  };
+
   return (
-    <div className="menu-page">
-      <h1 className="menu-page-title">{t('menu.title')}</h1>
-
-      <div className="menu-user-card">
-        <h3>{t('menu.welcome', { nickname: user.nickname })}</h3>
-        <p className="menu-rank-line">
-          {t('menu.rank', { rank: user.rank })}
-          <span className="menu-rank-inline">
-            {t('menu.rankRecordShort', { wins: rankProgress.wins, losses: rankProgress.losses })}
-          </span>
-        </p>
-        <p className="menu-rank-remaining">
-          {t('menu.rankProgressToGo', {
-            promotion: rankProgress.canPromote
-              ? t('menu.rankProgressPromotionLeft', { count: rankProgress.winsRemaining })
-              : t('menu.rankProgressPromotionLocked'),
-            demotion: rankProgress.canDemote
-              ? t('menu.rankProgressDemotionLeft', { count: rankProgress.lossesRemaining })
-              : t('menu.rankProgressDemotionLocked'),
-          })}
-        </p>
-        <p>{t('menu.record', { wins: user.wins, losses: user.losses })}</p>
-        <p>{t('menu.coins', { coins: user.coins })}</p>
-        <div className="menu-account-actions">
-          <button onClick={logout} style={{ background: '#555' }}>{t('menu.logout')}</button>
-          <button onClick={handleWithdraw} style={{ background: '#a00' }}>{t('menu.withdraw')}</button>
-          <button onClick={handleRechargeCoins} disabled={isRecharging} style={{ background: '#d08700' }}>{t('menu.rechargeCoins')}</button>
+    <>
+      <header className="app-header">
+        <div className="app-header-left">
+          <span className="material-icons-round">grid_on</span>
+          <h1>K-Janggi</h1>
         </div>
+        <div className="app-header-right">
+          <button className="header-icon-btn" onClick={() => navigate('/profile')}>
+            <span className="material-icons-round">settings</span>
+          </button>
+        </div>
+      </header>
+
+      <div className="home-page page-with-nav">
+        <section className="profile-card">
+          <div className="profile-card-deco" />
+          <div className="profile-card-top">
+            <div className="profile-avatar">
+              <div className="profile-avatar-img">
+                {user.nickname?.charAt(0) || '?'}
+              </div>
+              <div className="profile-rank-badge">{user.rank || '18급'}</div>
+            </div>
+            <div className="profile-info">
+              <h2>{user.nickname}</h2>
+              <p>Rating: <span className="rating">{user.rating ? `${user.rating}p` : '-'}</span></p>
+            </div>
+            <div className="profile-record">
+              <div className="profile-record-label">{t('menu.recordLabel')}</div>
+              <div className="profile-record-value">
+                {user.wins ?? 0}{t('records.winShort')} {user.losses ?? 0}{t('records.lossShort')}
+              </div>
+            </div>
+          </div>
+          <div className="profile-card-stats">
+            <div className="profile-stat">
+              <div className="profile-stat-label">{t('menu.winStreak')}</div>
+              <div className="profile-stat-value primary">{rankProgress.wins}</div>
+            </div>
+            <div className="profile-stat-divider" />
+            <div className="profile-stat">
+              <div className="profile-stat-label">{t('menu.winRate')}</div>
+              <div className="profile-stat-value">{winRate}%</div>
+            </div>
+            <div className="profile-stat-divider" />
+            <div className="profile-stat">
+              <div className="profile-stat-label">{t('menu.gold')}</div>
+              <div className="profile-stat-value gold">
+                <span className="material-icons-round">monetization_on</span>
+                {user.coins?.toLocaleString() ?? 0}
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section className="match-buttons">
+          <button className="match-btn ai" onClick={handleAiMatchStart} disabled={isStartingAi}>
+            <span className="material-icons-round">smart_toy</span>
+            <span className="match-btn-title">{t('menu.aiMatchShort')}</span>
+            <span className="match-btn-subtitle">{t('menu.aiMatchSub')}</span>
+          </button>
+          <button className="match-btn online" onClick={() => navigate('/game?mode=online')}>
+            <span className="material-icons-round">sports_esports</span>
+            <span className="match-btn-title">{t('menu.onlineMatchShort')}</span>
+            <span className="match-btn-subtitle">{t('menu.onlineMatchSub')}</span>
+          </button>
+        </section>
+
+        <section>
+          <div className="recent-section-header">
+            <h3>{t('menu.recentGames')}</h3>
+            <a onClick={() => navigate('/records')}>{t('menu.viewMore')}</a>
+          </div>
+          <div className="recent-records-list">
+            {recentGames.length === 0 && (
+              <div className="page-empty" style={{ padding: '30px 0' }}>
+                <span className="material-icons-round">inbox</span>
+                <span>{t('records.noGames')}</span>
+              </div>
+            )}
+            {recentGames.map(game => {
+              const result = getResultLabel(game);
+              const teamInfo = getTeamChar(game);
+              const opponent = getOpponentName(game);
+              return (
+                <div key={game.id} className="recent-record-card" onClick={() => navigate(`/replay/${game.id}`)}>
+                  <div className="recent-record-left">
+                    <div className={`recent-team-icon ${teamInfo.team}`}>{teamInfo.char}</div>
+                    <div className="recent-record-info">
+                      <div className="opponent">vs {opponent}</div>
+                      <div className="meta">
+                        {formatTimeAgo(game.played_at)} {game.move_count ? `• ${game.move_count}${t('board.movesUnit')}` : ''}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="recent-record-right">
+                    <span className={`result-badge ${result.type}`}>{result.label}</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </section>
       </div>
 
-      <div className="menu-play-actions">
-        <button onClick={handleAiMatchStart} disabled={isStartingAi}>{t('menu.aiMatch')}</button>
-        <button onClick={() => navigate('/game?mode=online')}>{t('menu.onlineMatch')}</button>
-        <button onClick={() => navigate('/replay')}>{t('menu.replay')}</button>
-      </div>
-
-      {toastMessage && (
-        <div className="menu-toast">
-          {toastMessage}
-        </div>
-      )}
-    </div>
+      {toastMessage && <div className="toast-notification">{toastMessage}</div>}
+      <BottomNav />
+    </>
   );
 }
 

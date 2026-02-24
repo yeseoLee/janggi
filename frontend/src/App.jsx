@@ -6,13 +6,12 @@ import MainMenu from './pages/MainMenu';
 import GamePage from './pages/GamePage';
 import ReplayList from './pages/ReplayList';
 import ReplayPage from './pages/ReplayPage';
+import Profile from './pages/Profile';
 import LanguageSelector from './components/LanguageSelector';
 import './App.css';
 
-// Protected Route Component
 const ProtectedRoute = ({ children }) => {
     const { user, token } = useAuth();
-    // Allow if token exists (user might be loading), or redirect
     if (!token) {
         return <Navigate to="/login" replace />;
     }
@@ -34,8 +33,14 @@ function App() {
                             <GamePage />
                         </ProtectedRoute>
                     } />
+                    <Route path="/records" element={<ReplayList />} />
                     <Route path="/replay" element={<ReplayList />} />
                     <Route path="/replay/:id" element={<ReplayPage />} />
+                    <Route path="/profile" element={
+                        <ProtectedRoute>
+                            <Profile />
+                        </ProtectedRoute>
+                    } />
                 </Routes>
             </div>
         </BrowserRouter>

@@ -1,78 +1,148 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
-import '../components/Board.css'; // Reuse basic styles
 import { useLanguage } from '../context/LanguageContext';
+import { useAuth } from '../context/AuthContext';
+import BottomNav from '../components/BottomNav';
 
 function ReplayList() {
-    const [games, setGames] = useState([]);
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState('');
-    const navigate = useNavigate();
-    const { t } = useLanguage();
+  const [games, setGames] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const navigate = useNavigate();
+  const { t } = useLanguage();
+  const { user } = useAuth();
 
-    useEffect(() => {
-        setLoading(true);
-        axios.get('/api/games')
-            .then((res) => setGames(res.data))
-            .catch((err) => {
-                console.error(err);
-                setError(t('replay.listLoadFailed'));
-            })
-            .finally(() => setLoading(false));
-    }, [t]);
+  useEffect(() => {
+    setLoading(true);
+    axios.get('/api/games')
+      .then((res) => setGames(res.data || []))
+      .catch(() => setError(t('replay.listLoadFailed')))
+      .finally(() => setLoading(false));
+  }, [t]);
 
-    const getResultLabel = (resultType) => {
-        const key = `replay.result.${resultType || 'unknown'}`;
-        const translated = t(key);
-        return translated === key ? t('replay.result.unknown') : translated;
-    };
+  const getResultInfo = (game) => {
+    if (!game.winner_name) return { type: 'draw', text: t('records.drawChar'), sub: 'Draw' };
+    if (user && game.winner_name === user.nickname) return { type: 'win', text: t('records.winChar'), sub: 'Win' };
+    return { type: 'loss', text: t('records.lossChar'), sub: 'Loss' };
+  };
 
-    return (
-        <div className="replay-list-container" style={{ color: 'white', padding: '20px', textAlign: 'center' }}>
-            <h1>{t('replay.listTitle')}</h1>
-            <button onClick={() => navigate('/')} style={{ marginBottom: '20px', padding: '10px' }}>{t('replay.backToMain')}</button>
-            
-            {loading && <p>{t('replay.loading')}</p>}
-            {!loading && error && <p>{error}</p>}
-            {!loading && !error && games.length === 0 && <p>{t('replay.noGames')}</p>}
+  const getMyTeam = (game) => {
+    if (!user) return 'cho';
+    const isCho = (game.cho_name === user.nickname) ||
+      (game.winner_team === 'cho' && game.winner_name === user.nickname) ||
+      (game.winner_team === 'han' && game.winner_name !== user.nickname);
+    return isCho ? 'cho' : 'han';
+  };
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', alignItems: 'center' }}>
-                {games.map(game => (
-                    <div key={game.id} 
-                         onClick={() => navigate(`/replay/${game.id}`)}
-                         style={{
-                             background: 'rgba(255,255,255,0.1)',
-                             padding: '15px',
-                             borderRadius: '8px',
-                             width: '80%',
-                             maxWidth: '600px',
-                             cursor: 'pointer',
-                             display: 'flex',
-                             justifyContent: 'space-between'
-                        }}>
-                        <div>
-                            <span style={{ color: '#5078f2' }}>{game.cho_name || (game.winner_team === 'cho' ? game.winner_name : game.loser_name)} ({t('board.team.cho')})</span>
-                            {' vs '}
-                            <span style={{ color: '#f25050' }}>{game.han_name || (game.winner_team === 'han' ? game.winner_name : game.loser_name)} ({t('board.team.han')})</span>
-                        </div>
-                        <div>
-                            {t('replay.winner')}: <strong>{game.winner_name}</strong> ({game.winner_team?.toUpperCase()})
-                        </div>
-                        <div>
-                            {t('replay.moves')}: <strong>{game.move_count ?? 0}</strong>
-                        </div>
-                        <div>
-                            {t('replay.end')}: <strong>{getResultLabel(game.result_type)}</strong>
-                        </div>
-                        <div style={{ fontSize: '0.8em', color: '#ccc' }}>
-                            {new Date(game.played_at).toLocaleString()}
-                        </div>
-                    </div>
-                ))}
-            </div>
+  const getOpponentName = (game) => {
+    const choName = game.cho_name || (game.winner_team === 'cho' ? game.winner_name : game.loser_name);
+    const hanName = game.han_name || (game.winner_team === 'han' ? game.winner_name : game.loser_name);
+    if (user && choName === user.nickname) return hanName || 'AI';
+    if (user && hanName === user.nickname) return choName || 'AI';
+    return `${choName || '?'} vs ${hanName || '?'}`;
+  };
+
+  const getGameType = (game) => {
+    if (game.game_mode === 'ai') return t('records.aiMatch');
+    if (game.game_mode === 'online') return t('records.rankedMatch');
+    return t('records.friendlyMatch');
+  };
+
+  const getResultType = (game) => {
+    const key = `replay.result.${game.result_type || 'unknown'}`;
+    const translated = t(key);
+    return translated === key ? null : translated;
+  };
+
+  const totalGames = games.length;
+  const wins = user ? games.filter(g => g.winner_name === user.nickname).length : 0;
+  const winRate = totalGames > 0 ? ((wins / totalGames) * 100).toFixed(1) : '0.0';
+
+  return (
+    <>
+      <header className="records-header">
+        <button className="header-icon-btn" onClick={() => navigate('/')}>
+          <span className="material-icons-round">arrow_back</span>
+        </button>
+        <h1>{t('records.title')}</h1>
+        <div style={{ width: 40 }} />
+      </header>
+
+      <div className="records-page page-with-nav">
+        <div className="records-stats-bar">
+          <div className="records-stat">
+            <div className="records-stat-label">{t('records.totalGames')}</div>
+            <div className="records-stat-value">{totalGames.toLocaleString()}</div>
+          </div>
+          <div className="records-stat">
+            <div className="records-stat-label">{t('records.winRateStat')}</div>
+            <div className="records-stat-value">{winRate}%</div>
+          </div>
         </div>
-    );
+
+        {loading && <div className="page-loading">{t('replay.loading')}</div>}
+        {!loading && error && <div className="page-empty"><span className="material-icons-round">error_outline</span>{error}</div>}
+        {!loading && !error && games.length === 0 && (
+          <div className="page-empty">
+            <span className="material-icons-round">inbox</span>
+            {t('records.noGames')}
+          </div>
+        )}
+
+        <div className="records-list">
+          {games.map(game => {
+            const result = getResultInfo(game);
+            const myTeam = getMyTeam(game);
+            const opponent = getOpponentName(game);
+            const gameType = getGameType(game);
+            const specialResult = getResultType(game);
+            const dateStr = game.played_at ? new Date(game.played_at).toLocaleDateString() : '';
+
+            return (
+              <div key={game.id} className="record-card" onClick={() => navigate(`/replay/${game.id}`)}>
+                <div className="record-result-col">
+                  <span className={`record-result-text ${result.type}`}>{result.text}</span>
+                  <span className="record-result-sub">{result.sub}</span>
+                </div>
+                <div className="record-card-body">
+                  <div className="record-card-top">
+                    <span className="record-game-type">{gameType}</span>
+                    <span className="record-date">{dateStr}</span>
+                  </div>
+                  <div className="record-match-row">
+                    <div className={`record-team-badge ${myTeam}`}>
+                      {myTeam === 'cho' ? '楚' : '漢'}
+                    </div>
+                    <span className="record-vs">VS</span>
+                    <span className="record-opponent-name">{opponent}</span>
+                  </div>
+                  <div className="record-meta-row">
+                    {game.move_count != null && (
+                      <span className="record-meta-item">
+                        <span className="material-icons-round">timer</span>
+                        {game.move_count}{t('board.movesUnit')}
+                      </span>
+                    )}
+                    {specialResult && (
+                      <span className={`record-special-badge ${result.type === 'win' ? 'win-special' : 'loss-special'}`}>
+                        {specialResult}
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <div className="record-card-arrow">
+                  <span className="material-icons-round">chevron_right</span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      <BottomNav />
+    </>
+  );
 }
 
 export default ReplayList;
