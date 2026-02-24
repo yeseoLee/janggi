@@ -609,311 +609,338 @@ const Board = ({
   const isAiSetupPhase = gameMode === 'ai' && gameState !== 'SELECT_SIDE';
   const isSelectingAiSetup = isAiSetupPhase && myTeam && setupTeam !== myTeam;
 
+  // Determine which captured pieces go top vs bottom based on viewTeam
+  const topCaptured = viewTeam === TEAM.HAN ? choDeadPieces : hanDeadPieces;
+  const bottomCaptured = viewTeam === TEAM.HAN ? hanDeadPieces : choDeadPieces;
+  const topTeam = viewTeam === TEAM.HAN ? TEAM.CHO : TEAM.HAN;
+  const bottomTeam = viewTeam === TEAM.HAN ? TEAM.HAN : TEAM.CHO;
+
+  const [showSettings, setShowSettings] = useState(false);
+
   return (
-    <div className="janggi-game-container">
+    <div className="game-screen">
         {/* MATCHING OVERLAY */}
         {gameState === 'MATCHING' && (
-            <div className="overlay matching-overlay">
+            <div className="game-fullscreen-overlay">
                 <div className="spinner"></div>
                 <h2>{t('board.matchingTitle')}</h2>
                 <p>{t('board.matchingSubtitle')}</p>
             </div>
         )}
-        
+
         {/* WAITING OVERLAY (SETUP) */}
         {(gameState === 'WAITING_HAN' || gameState === 'WAITING_CHO') && (
-            <div className="overlay waiting-overlay" style={{ background: 'rgba(0,0,0,0.85)', zIndex: 50 }}>
+            <div className="game-fullscreen-overlay">
                 <h2>{gameState === 'WAITING_HAN' ? t('board.waitingHan') : t('board.waitingCho')}</h2>
                 <div className="spinner"></div>
             </div>
         )}
 
-        <div className="janggi-board-area">
-            <div className="match-header">
-                <span className="match-title">{modeLabel}</span>
-                <span className="move-count">{displayMoveCount} {t('board.movesUnit')}</span>
+        {/* Header */}
+        <header className="game-header">
+            <button className="game-header-btn" onClick={() => navigate('/')}>
+                <span className="material-icons-round">arrow_back</span>
+            </button>
+            <div className="game-header-center">
+                <h1 className="game-header-title">{modeLabel}</h1>
+                <span className="game-header-moves">{displayMoveCount}{t('board.movesUnit')} {t('board.inProgress')}</span>
             </div>
+            <button className="game-header-btn" onClick={() => setShowSettings(!showSettings)}>
+                <span className="material-icons-round">settings</span>
+            </button>
+        </header>
 
-            <div className="janggi-board">
-              {/* Winner Overlay */}
-              {winner && (
-                  <div className="overlay winner-overlay">
-                      <div>{t('board.gameOver')}</div>
-                      <div style={{ color: winner === TEAM.CHO ? 'blue' : 'red' }}>
-                        {t('board.wins', { team: t(`board.team.${winner}`) })}
-                      </div>
-                      {gameMode !== 'online' && gameMode !== 'replay' && <button onClick={() => window.location.reload()}>{t('board.playAgain')}</button>}
-                      <button onClick={() => navigate('/')}>{t('board.exitToMenu')}</button>
-                  </div>
-              )}
-
-              {/* Setup Overlay */}
-              {(gameState === 'SELECT_SIDE' || gameState === 'SETUP_HAN' || gameState === 'SETUP_CHO') && (
-                   <div className="overlay setup-overlay">
-                       {gameState === 'SELECT_SIDE' ? (
-                           <>
-                               <h2>{t('board.selectSideTitle')}</h2>
-                               <p>{t('board.selectSideSubtitle')}</p>
-                               <div className="ai-level-config">
-                                   <div className="ai-level-header">
-                                       <span>{t('board.aiLevelLabel')}</span>
-                                       <span>{t('board.aiLevelDepthValue', { depth: aiSearchDepth })}</span>
-                                   </div>
-                                   <input
-                                       className="ai-level-slider"
-                                       type="range"
-                                       min={AI_MIN_DEPTH}
-                                       max={AI_MAX_DEPTH}
-                                       step={1}
-                                       value={aiSearchDepth}
-                                       onChange={(e) => handleAiDepthChange(e.target.value)}
-                                   />
-                                   <div className="ai-level-presets">
-                                       {AI_DEPTH_PRESETS.map((depth) => (
-                                           <button
-                                               key={`ai-depth-${depth}`}
-                                               type="button"
-                                               className={`ai-level-preset-btn ${aiSearchDepth === depth ? 'active' : ''}`}
-                                               onClick={() => handleAiDepthChange(depth)}
-                                           >
-                                               {t('board.aiLevelPreset', { depth })}
-                                           </button>
-                                       ))}
-                                   </div>
-                               </div>
-                               <div className="side-select-options">
-                                   <button
-                                       type="button"
-                                       className="side-select-btn cho"
-                                       onClick={() => handleAiSideSelect(TEAM.CHO)}
-                                   >
-                                       <span className="side-select-team">{t('board.team.cho')}</span>
-                                       <span className="side-select-desc">{t('board.selectSideCho')}</span>
-                                   </button>
-                                   <button
-                                       type="button"
-                                       className="side-select-btn han"
-                                       onClick={() => handleAiSideSelect(TEAM.HAN)}
-                                   >
-                                       <span className="side-select-team">{t('board.team.han')}</span>
-                                       <span className="side-select-desc">{t('board.selectSideHan')}</span>
-                                   </button>
-                               </div>
-                           </>
-                       ) : (
-                           <>
-                               <h2>{gameState === 'SETUP_HAN' ? t('board.setupHanTitle') : t('board.setupChoTitle')}</h2>
-                               {isAiSetupPhase && (
-                                   <p>{isSelectingAiSetup ? t('board.setupAiSubtitle') : t('board.setupMySubtitle')}</p>
-                               )}
-
-                               {opponentSetupPieces.length > 0 && (
-                                   <div className="opponent-setup-display">
-                                       <div className="opponent-setup-preview">
-                                           {opponentSetupPieces.map((pType, idx) => (
-                                               <div key={`opponent-setup-${idx}`} className="setup-piece opponent-setup-piece">
-                                                   <Piece
-                                                       team={opponentSetupTeam}
-                                                       type={pType}
-                                                       styleVariant={styleVariant}
-                                                       inverted={invertColor}
-                                                   />
-                                               </div>
-                                           ))}
-                                       </div>
-                                   </div>
-                               )}
-
-                               <div className="setup-options">
-                                   {Object.entries(SETUP_TYPES).map(([key, label]) => {
-                                       const setupLabelKey = `board.setupTypes.${key}`;
-                                       const setupLabel = t(setupLabelKey) === setupLabelKey ? label : t(setupLabelKey);
-                                       const pieces = getSetupPieces(key);
-                                      
-                                       return (
-                                           <button
-                                               key={key}
-                                               onClick={() => handleSetupSelect(label)}
-                                               className="setup-btn"
-                                               aria-label={setupLabel}
-                                               title={setupLabel}
-                                           >
-                                               <div className="setup-preview">
-                                                   {pieces.map((pType, idx) => (
-                                                       <div key={idx} className="setup-piece">
-                                                           <Piece 
-                                                               team={setupTeam} 
-                                                               type={pType} 
-                                                               styleVariant={styleVariant} 
-                                                               inverted={invertColor} 
-                                                           />
-                                                       </div>
-                                                   ))}
-                                               </div>
-                                           </button>
-                                       );
-                                   })}
-                               </div>
-                           </>
-                       )}
-                   </div>
-              )}
-              
-              {/* Check Notification */}
-              {checkAlert && !winner && (gameState === 'PLAYING') && (
-                  <div className="check-alert">
-                      {t('board.checkAlert', { team: t(`board.team.${checkAlert}`) })}
-                  </div>
-              )}
-
-              <div className="grid-container">
-                {/* Render grid lines */}
-                {Array.from({ length: 10 - 1 }).map((_, r) => (
-                  <div key={`row-${r}`} className="grid-row">
-                    {Array.from({ length: 9 - 1 }).map((_, c) => (
-                      <div key={`cell-${r}-${c}`} className="grid-cell"></div>
-                    ))}
-                  </div>
-                ))}
-                
-                <div className="palace palace-top"><div className="palace-cross"></div></div>
-                <div className="palace palace-bottom"><div className="palace-cross"></div></div>
-              </div>
-              
-              <div className="piece-layer">
-                {/* Render Interaction Overlay */}
-                {Array.from({ length: 10 }).map((_, r) => (
-                    Array.from({ length: 9 }).map((_, c) => {
-                        const isSelected = selectedPos && selectedPos.r === r && selectedPos.c === c;
-                        const isValid = validMoves.some(m => m.r === r && m.c === c);
-                        const piece = board[r][c];
-                        
-                        const renderR = viewTeam === TEAM.HAN ? (10 - 1) - r : r;
-                        const renderC = viewTeam === TEAM.HAN ? (9 - 1) - c : c;
-
-                        const left = (renderC / (9 - 1)) * 100;
-                        const top = (renderR / (10 - 1)) * 100;
-
-                        const isOpponent = piece && (piece.team !== viewTeam);
-                        let rotation = 0;
-                        if (useRotatedPieces && isOpponent) rotation = 180;
-                        
-                        return (
-                            <div 
-                                key={`cell-interaction-${r}-${c}`}
-                                style={{ left: `${left}%`, top: `${top}%`, zIndex: 10 }}
-                                className={`interaction-cell ${isSelected ? 'selected' : ''} ${isValid ? 'valid' : ''}`}
-                                onClick={() => handleCellClick(r, c)}
-                            >
-                                {isValid && <div className="move-marker" />}
-                                {piece && (
-                                     <div style={{ width: '100%', height: '100%', display: 'flex', justifyContent: 'center', alignItems: 'center', transform: `rotate(${rotation}deg)`, transition: 'transform 0.3s ease' }}>
-                                        <Piece team={piece.team} type={piece.type} styleVariant={styleVariant} inverted={invertColor} />
-                                     </div>
-                                )}
-                            </div>
-                        );
-                    })
-                ))}
-              </div>
-            </div>
-        </div>
-
-        <div className="janggi-sidebar">
-            <div className="sidebar-top-row">
-                <button className="home-btn" onClick={() => navigate('/')}>{t('board.home')}</button>
-                <span className="mode-chip">{modeLabel}</span>
-            </div>
-
-            <div className="score-board">
-                <div className="score-item cho">{t('board.scoreCho', { score: scores.cho })}</div>
-                <div className="score-item han">{t('board.scoreHan', { score: scores.han })}</div>
-            </div>
-
-            <div className="captured-piece-board">
-                <div className="captured-row">
-                    <div className="captured-label cho">{t('board.capturedCho')}</div>
-                    <div className="captured-pieces">
-                        {choDeadPieces.length === 0 ? (
-                            <span className="captured-empty">{t('board.noCapturedPieces')}</span>
-                        ) : (
-                            choDeadPieces.map((pieceType, idx) => (
-                                <div key={`captured-cho-${pieceType}-${idx}`} className="captured-piece-item">
-                                    <Piece
-                                        team={TEAM.CHO}
-                                        type={pieceType}
-                                        styleVariant={styleVariant}
-                                        inverted={invertColor}
-                                    />
-                                </div>
-                            ))
-                        )}
-                    </div>
-                </div>
-                <div className="captured-row">
-                    <div className="captured-label han">{t('board.capturedHan')}</div>
-                    <div className="captured-pieces">
-                        {hanDeadPieces.length === 0 ? (
-                            <span className="captured-empty">{t('board.noCapturedPieces')}</span>
-                        ) : (
-                            hanDeadPieces.map((pieceType, idx) => (
-                                <div key={`captured-han-${pieceType}-${idx}`} className="captured-piece-item">
-                                    <Piece
-                                        team={TEAM.HAN}
-                                        type={pieceType}
-                                        styleVariant={styleVariant}
-                                        inverted={invertColor}
-                                    />
-                                </div>
-                            ))
-                        )}
-                    </div>
-                </div>
-            </div>
-
-            <div className="game-status-bar">
-                 <div className="turn-indicator">
-                     {t('board.turnLabel')}: <span className={turn === TEAM.CHO ? 'turn-team cho' : 'turn-team han'}>{t(`board.team.${turn}`)}</span>
-                 </div>
-
-                 {gameMode === 'replay' && (
-                    <div className="replay-step">{t('board.step', { current: replayStep + 1, total: replayHistory?.length })}</div>
-                 )}
-                 {gameMode === 'ai' && aiThinking && (
-                    <div className="replay-step">{t('board.aiThinking')}</div>
-                 )}
-                 
-                 <div className="game-controls">
-                     {gameMode === 'replay' ? (
-                         <>
-                            <button onClick={handleReplayPrev} disabled={replayStep === 0}>{t('board.prev')}</button>
-                            <button onClick={handleReplayNext} disabled={!replayHistory || replayStep === replayHistory.length - 1}>{t('board.next')}</button>
-                         </>
-                     ) : gameMode === 'online' ? (
-                         <>
-                            <button onClick={handleOnlinePass} disabled={turn !== myTeam}>{t('board.pass')}</button>
-                            <button onClick={handleResign} className="resign-btn">{t('board.resign')}</button>
-                         </>
-                     ) : (
-                         <>
-                            <button onClick={handleReset} disabled={gameMode === 'ai' && aiThinking}>{t('board.reset')}</button>
-                            <button onClick={handleUndo} disabled={gameMode === 'ai' && aiThinking}>{t('board.undo')}</button>
-                            <button onClick={handlePass} disabled={gameMode === 'ai' && (aiThinking || !myTeam || turn !== myTeam)}>{t('board.pass')}</button>
-                         </>
-                     )}
-                 </div>
-            </div>
-            
-            <div className="settings-controls">
-                <div className="control-row select-row">
-                   <span className="control-label">{t('board.view')}</span>
-                   <select value={viewTeam} onChange={(e) => setViewTeam(e.target.value)}>
-                      <option value={TEAM.CHO}>{t('board.team.cho')}</option>
-                      <option value={TEAM.HAN}>{t('board.team.han')}</option>
+        {/* Settings Panel (collapsible) */}
+        {showSettings && (
+            <div className="game-settings-panel">
+                <div className="game-setting-row">
+                    <span>{t('board.view')}</span>
+                    <select value={viewTeam} onChange={(e) => setViewTeam(e.target.value)}>
+                        <option value={TEAM.CHO}>{t('board.team.cho')}</option>
+                        <option value={TEAM.HAN}>{t('board.team.han')}</option>
                     </select>
                 </div>
-                <label className="control-row toggle-row"><input type="checkbox" checked={invertColor} onChange={(e) => setInvertColor(e.target.checked)} /> {t('board.invertPieceColor')}</label>
-                <label className="control-row toggle-row"><input type="checkbox" checked={useRotatedPieces} onChange={(e) => setUseRotatedPieces(e.target.checked)} /> {t('board.rotateOpponentPieces')}</label>
+                <label className="game-setting-row">
+                    <input type="checkbox" checked={invertColor} onChange={(e) => setInvertColor(e.target.checked)} />
+                    {t('board.invertPieceColor')}
+                </label>
+                <label className="game-setting-row">
+                    <input type="checkbox" checked={useRotatedPieces} onChange={(e) => setUseRotatedPieces(e.target.checked)} />
+                    {t('board.rotateOpponentPieces')}
+                </label>
+            </div>
+        )}
+
+        {/* Main game area */}
+        <main className="game-main">
+            {/* Top captured pieces bar */}
+            <div className="captured-bar">
+                {topCaptured.map((pieceType, idx) => (
+                    <div key={`cap-top-${pieceType}-${idx}`} className="captured-bar-piece">
+                        <Piece team={topTeam} type={pieceType} styleVariant={styleVariant} inverted={invertColor} />
+                    </div>
+                ))}
+            </div>
+
+            {/* Board */}
+            <div className="game-board-wrap">
+                <div className="janggi-board">
+                    {/* Winner Overlay */}
+                    {winner && (
+                        <div className="overlay winner-overlay">
+                            <div className="winner-label">{t('board.gameOver')}</div>
+                            <div className="winner-team" style={{ color: winner === TEAM.CHO ? '#2563eb' : '#dc2626' }}>
+                                {t('board.wins', { team: t(`board.team.${winner}`) })}
+                            </div>
+                            {gameMode !== 'online' && gameMode !== 'replay' && (
+                                <button className="winner-btn" onClick={() => window.location.reload()}>{t('board.playAgain')}</button>
+                            )}
+                            <button className="winner-btn secondary" onClick={() => navigate('/')}>{t('board.exitToMenu')}</button>
+                        </div>
+                    )}
+
+                    {/* Setup Overlay */}
+                    {(gameState === 'SELECT_SIDE' || gameState === 'SETUP_HAN' || gameState === 'SETUP_CHO') && (
+                        <div className="overlay setup-overlay">
+                            {gameState === 'SELECT_SIDE' ? (
+                                <>
+                                    <h2>{t('board.selectSideTitle')}</h2>
+                                    <p>{t('board.selectSideSubtitle')}</p>
+                                    <div className="ai-level-config">
+                                        <div className="ai-level-header">
+                                            <span>{t('board.aiLevelLabel')}</span>
+                                            <span>{t('board.aiLevelDepthValue', { depth: aiSearchDepth })}</span>
+                                        </div>
+                                        <input
+                                            className="ai-level-slider"
+                                            type="range"
+                                            min={AI_MIN_DEPTH}
+                                            max={AI_MAX_DEPTH}
+                                            step={1}
+                                            value={aiSearchDepth}
+                                            onChange={(e) => handleAiDepthChange(e.target.value)}
+                                        />
+                                        <div className="ai-level-presets">
+                                            {AI_DEPTH_PRESETS.map((depth) => (
+                                                <button
+                                                    key={`ai-depth-${depth}`}
+                                                    type="button"
+                                                    className={`ai-level-preset-btn ${aiSearchDepth === depth ? 'active' : ''}`}
+                                                    onClick={() => handleAiDepthChange(depth)}
+                                                >
+                                                    {t('board.aiLevelPreset', { depth })}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                    <div className="side-select-options">
+                                        <button type="button" className="side-select-btn cho" onClick={() => handleAiSideSelect(TEAM.CHO)}>
+                                            <span className="side-select-team">{t('board.team.cho')}</span>
+                                            <span className="side-select-desc">{t('board.selectSideCho')}</span>
+                                        </button>
+                                        <button type="button" className="side-select-btn han" onClick={() => handleAiSideSelect(TEAM.HAN)}>
+                                            <span className="side-select-team">{t('board.team.han')}</span>
+                                            <span className="side-select-desc">{t('board.selectSideHan')}</span>
+                                        </button>
+                                    </div>
+                                </>
+                            ) : (
+                                <>
+                                    <h2>{gameState === 'SETUP_HAN' ? t('board.setupHanTitle') : t('board.setupChoTitle')}</h2>
+                                    {isAiSetupPhase && (
+                                        <p>{isSelectingAiSetup ? t('board.setupAiSubtitle') : t('board.setupMySubtitle')}</p>
+                                    )}
+                                    {opponentSetupPieces.length > 0 && (
+                                        <div className="opponent-setup-display">
+                                            <div className="opponent-setup-preview">
+                                                {opponentSetupPieces.map((pType, idx) => (
+                                                    <div key={`opponent-setup-${idx}`} className="setup-piece opponent-setup-piece">
+                                                        <Piece team={opponentSetupTeam} type={pType} styleVariant={styleVariant} inverted={invertColor} />
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+                                    <div className="setup-options">
+                                        {Object.entries(SETUP_TYPES).map(([key, label]) => {
+                                            const setupLabelKey = `board.setupTypes.${key}`;
+                                            const setupLabel = t(setupLabelKey) === setupLabelKey ? label : t(setupLabelKey);
+                                            const pieces = getSetupPieces(key);
+                                            return (
+                                                <button key={key} onClick={() => handleSetupSelect(label)} className="setup-btn" aria-label={setupLabel} title={setupLabel}>
+                                                    <div className="setup-preview">
+                                                        {pieces.map((pType, idx) => (
+                                                            <div key={idx} className="setup-piece">
+                                                                <Piece team={setupTeam} type={pType} styleVariant={styleVariant} inverted={invertColor} />
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                </>
+                            )}
+                        </div>
+                    )}
+
+                    {/* Check Notification */}
+                    {checkAlert && !winner && (gameState === 'PLAYING') && (
+                        <div className="check-popup">
+                            <h2>{t('board.checkAlert', { team: t(`board.team.${checkAlert}`) })}</h2>
+                        </div>
+                    )}
+
+                    <div className="grid-container">
+                        {Array.from({ length: 10 - 1 }).map((_, r) => (
+                            <div key={`row-${r}`} className="grid-row">
+                                {Array.from({ length: 9 - 1 }).map((_, c) => (
+                                    <div key={`cell-${r}-${c}`} className="grid-cell"></div>
+                                ))}
+                            </div>
+                        ))}
+                        <div className="palace palace-top"><div className="palace-cross"></div></div>
+                        <div className="palace palace-bottom"><div className="palace-cross"></div></div>
+                    </div>
+
+                    <div className="piece-layer">
+                        {Array.from({ length: 10 }).map((_, r) => (
+                            Array.from({ length: 9 }).map((_, c) => {
+                                const isSelected = selectedPos && selectedPos.r === r && selectedPos.c === c;
+                                const isValid = validMoves.some(m => m.r === r && m.c === c);
+                                const piece = board[r][c];
+                                const renderR = viewTeam === TEAM.HAN ? (10 - 1) - r : r;
+                                const renderC = viewTeam === TEAM.HAN ? (9 - 1) - c : c;
+                                const left = (renderC / (9 - 1)) * 100;
+                                const top = (renderR / (10 - 1)) * 100;
+                                const isOpponent = piece && (piece.team !== viewTeam);
+                                let rotation = 0;
+                                if (useRotatedPieces && isOpponent) rotation = 180;
+                                return (
+                                    <div
+                                        key={`cell-interaction-${r}-${c}`}
+                                        style={{ left: `${left}%`, top: `${top}%`, zIndex: 10 }}
+                                        className={`interaction-cell ${isSelected ? 'selected' : ''} ${isValid ? 'valid' : ''}`}
+                                        onClick={() => handleCellClick(r, c)}
+                                    >
+                                        {isValid && <div className="move-marker" />}
+                                        {piece && (
+                                            <div style={{ width: '100%', height: '100%', display: 'flex', justifyContent: 'center', alignItems: 'center', transform: `rotate(${rotation}deg)`, transition: 'transform 0.3s ease' }}>
+                                                <Piece team={piece.team} type={piece.type} styleVariant={styleVariant} inverted={invertColor} />
+                                            </div>
+                                        )}
+                                    </div>
+                                );
+                            })
+                        ))}
+                    </div>
+                </div>
+            </div>
+
+            {/* Bottom captured pieces bar */}
+            <div className="captured-bar">
+                {bottomCaptured.map((pieceType, idx) => (
+                    <div key={`cap-bot-${pieceType}-${idx}`} className="captured-bar-piece">
+                        <Piece team={bottomTeam} type={pieceType} styleVariant={styleVariant} inverted={invertColor} />
+                    </div>
+                ))}
+            </div>
+        </main>
+
+        {/* Bottom Panel */}
+        <div className="game-bottom-panel">
+            <div className="game-bottom-handle" />
+
+            {/* Player info row */}
+            <div className="game-player-row">
+                <div className="game-player-info left">
+                    <div className="game-player-avatar opponent">
+                        <span className="material-icons-round">person</span>
+                        <div className={`game-player-team-badge ${topTeam}`}>
+                            {topTeam === TEAM.CHO ? '楚' : '漢'}
+                        </div>
+                    </div>
+                    <div className="game-player-text">
+                        <span className="game-player-name">
+                            {gameMode === 'online' ? (opponentInfo?.nickname || t('board.opponent')) : (gameMode === 'ai' ? 'AI' : t('board.opponent'))}
+                        </span>
+                        <span className="game-player-score">{topTeam === TEAM.CHO ? scores.cho : scores.han}{t('board.pointUnit')}</span>
+                    </div>
+                </div>
+
+                <div className="game-turn-center">
+                    <div className={`game-turn-indicator ${turn}`}>
+                        <span className="game-turn-label">{t(`board.team.${turn}`)}</span>
+                        <span className="game-turn-sub">{t('board.turnLabel')}</span>
+                    </div>
+                    {gameMode === 'ai' && aiThinking && (
+                        <div className="game-ai-thinking">{t('board.aiThinking')}</div>
+                    )}
+                    {gameMode === 'replay' && (
+                        <div className="game-replay-step">{replayStep + 1} / {replayHistory?.length}</div>
+                    )}
+                </div>
+
+                <div className="game-player-info right">
+                    <div className="game-player-text right">
+                        <span className="game-player-name">
+                            {gameMode === 'online' ? (user?.nickname || t('board.me')) : (user?.nickname || t('board.me'))}
+                        </span>
+                        <span className="game-player-score">{bottomTeam === TEAM.CHO ? scores.cho : scores.han}{t('board.pointUnit')}</span>
+                    </div>
+                    <div className={`game-player-avatar me ${turn === bottomTeam ? 'active-turn' : ''}`}>
+                        <span className="material-icons-round">person</span>
+                        <div className={`game-player-team-badge ${bottomTeam}`}>
+                            {bottomTeam === TEAM.CHO ? '楚' : '漢'}
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="game-action-grid">
+                {gameMode === 'replay' ? (
+                    <>
+                        <button className="game-action-btn" onClick={handleReplayPrev} disabled={replayStep === 0}>
+                            <span className="material-icons-round">skip_previous</span>
+                            <span>{t('board.prev')}</span>
+                        </button>
+                        <button className="game-action-btn" onClick={handleReplayNext} disabled={!replayHistory || replayStep === replayHistory.length - 1}>
+                            <span className="material-icons-round">skip_next</span>
+                            <span>{t('board.next')}</span>
+                        </button>
+                    </>
+                ) : gameMode === 'online' ? (
+                    <>
+                        <button className="game-action-btn" onClick={handleOnlinePass} disabled={turn !== myTeam}>
+                            <span className="material-icons-round">skip_next</span>
+                            <span>{t('board.pass')}</span>
+                        </button>
+                        <button className="game-action-btn danger" onClick={handleResign}>
+                            <span className="material-icons-round">flag</span>
+                            <span>{t('board.resign')}</span>
+                        </button>
+                    </>
+                ) : (
+                    <>
+                        <button className="game-action-btn" onClick={handlePass} disabled={gameMode === 'ai' && (aiThinking || !myTeam || turn !== myTeam)}>
+                            <span className="material-icons-round">skip_next</span>
+                            <span>{t('board.pass')}</span>
+                        </button>
+                        <button className="game-action-btn danger" onClick={handleResign}>
+                            <span className="material-icons-round">flag</span>
+                            <span>{t('board.resign')}</span>
+                        </button>
+                        <button className="game-action-btn dark" onClick={handleUndo} disabled={gameMode === 'ai' && aiThinking}>
+                            <span className="material-icons-round">undo</span>
+                            <span>{t('board.undo')}</span>
+                        </button>
+                        <button className="game-action-btn dark" onClick={handleReset} disabled={gameMode === 'ai' && aiThinking}>
+                            <span className="material-icons-round">refresh</span>
+                            <span>{t('board.reset')}</span>
+                        </button>
+                    </>
+                )}
             </div>
         </div>
     </div>

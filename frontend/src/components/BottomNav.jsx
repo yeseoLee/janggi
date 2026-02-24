@@ -21,22 +21,12 @@ function BottomNav() {
         </button>
 
         <button
-          className={`bottom-nav-item ${isActive('/game') ? 'active' : ''}`}
-          onClick={() => navigate('/game?mode=online')}
+          className="bottom-nav-item"
+          onClick={() => alert(t('nav.puzzleComingSoon'))}
         >
-          <span className="material-icons-round">sports_esports</span>
-          <span>{t('nav.match')}</span>
+          <span className="material-icons-round">extension</span>
+          <span>{t('nav.puzzle')}</span>
         </button>
-
-        <div className="bottom-nav-play-spacer" />
-        <div className="bottom-nav-play-wrap">
-          <button
-            className="bottom-nav-play-btn"
-            onClick={() => navigate('/game?mode=ai')}
-          >
-            <span className="material-icons-round">play_arrow</span>
-          </button>
-        </div>
 
         <button
           className={`bottom-nav-item ${isActive('/records') ? 'active' : ''}`}
