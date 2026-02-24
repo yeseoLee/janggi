@@ -1307,6 +1307,10 @@
   z-index: 500;
   box-shadow: var(--shadow-lg);
   animation: toast-in 0.3s ease;
+  white-space: nowrap;
+  max-width: 90vw;
+  text-overflow: ellipsis;
+  overflow: hidden;
 }
 
 @keyframes toast-in {
