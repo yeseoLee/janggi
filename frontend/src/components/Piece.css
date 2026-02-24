@@ -13,6 +13,10 @@
   width: 80%; /* Reduced from 90% */
   height: 80%;
   filter: drop-shadow(2px 2px 2px rgba(0,0,0,0.3));
+  /* Prevent image drag on desktop */
+  -webkit-user-drag: none;
+  user-drag: none;
+  pointer-events: none;
 }
 
 .piece.wang img {

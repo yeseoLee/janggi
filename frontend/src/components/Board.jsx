@@ -627,9 +627,40 @@ const Board = ({
   const bottomTeam = viewTeam === TEAM.HAN ? TEAM.HAN : TEAM.CHO;
 
   const [showSettings, setShowSettings] = useState(false);
+  const [playerPopupInfo, setPlayerPopupInfo] = useState(null); // { name, rank, wins, losses, rating, isAi }
+
+  const handlePlayerClick = (isMe) => {
+    if (isMe) {
+      if (!user) return;
+      setPlayerPopupInfo({
+        name: user.nickname || t('board.me'),
+        rank: user.rank || '18급',
+        wins: user.wins || 0,
+        losses: user.losses || 0,
+        rating: user.rating || 1000,
+        isAi: false,
+      });
+    } else {
+      if (gameMode === 'ai') {
+        setPlayerPopupInfo({ name: 'AI', rank: '-', wins: 0, losses: 0, rating: null, isAi: true });
+        return;
+      }
+      if (!opponentInfo) return;
+      setPlayerPopupInfo({
+        name: opponentInfo.nickname || t('board.opponent'),
+        rank: opponentInfo.rank || '18급',
+        wins: opponentInfo.wins || 0,
+        losses: opponentInfo.losses || 0,
+        rating: opponentInfo.rating || 1000,
+        isAi: false,
+      });
+    }
+  };
+
+  const preventDrag = (e) => e.preventDefault();
 
   return (
-    <div className="game-screen">
+    <div className="game-screen" onDragStart={preventDrag}>
         {/* MATCHING OVERLAY */}
         {gameState === 'MATCHING' && (
             <div className="game-fullscreen-overlay">
@@ -737,7 +768,6 @@ const Board = ({
                                                     </div>
                                                 ))}
                                             </div>
-                                            <span className="setup-fs-option-label">{setupLabel}</span>
                                         </button>
                                     );
                                 })}
@@ -820,7 +850,7 @@ const Board = ({
 
                     <div className="grid-container">
                         {Array.from({ length: 10 - 1 }).map((_, r) => (
-                            <div key={`row-${r}`} className="grid-row">
+                            <div key={`row-${r}`} className={`grid-row${r === 8 ? ' grid-row-last' : ''}`}>
                                 {Array.from({ length: 9 - 1 }).map((_, c) => (
                                     <div key={`cell-${r}-${c}`} className="grid-cell"></div>
                                 ))}
@@ -880,7 +910,7 @@ const Board = ({
 
             {/* Player info row */}
             <div className="game-player-row">
-                <div className="game-player-info left">
+                <div className="game-player-info left" onClick={() => handlePlayerClick(false)} role="button" tabIndex={0}>
                     <div className="game-player-avatar opponent">
                         <span className="material-icons-round">person</span>
                         <div className={`game-player-team-badge ${topTeam}`}>
@@ -908,10 +938,10 @@ const Board = ({
                     )}
                 </div>
 
-                <div className="game-player-info right">
+                <div className="game-player-info right" onClick={() => handlePlayerClick(true)} role="button" tabIndex={0}>
                     <div className="game-player-text right">
                         <span className="game-player-name">
-                            {gameMode === 'online' ? (user?.nickname || t('board.me')) : (user?.nickname || t('board.me'))}
+                            {user?.nickname || t('board.me')}
                         </span>
                         <span className="game-player-score">{bottomTeam === TEAM.CHO ? scores.cho : scores.han}{t('board.pointUnit')}</span>
                     </div>
@@ -923,6 +953,52 @@ const Board = ({
                     </div>
                 </div>
             </div>
+
+            {/* Player Profile Popup */}
+            {playerPopupInfo && (
+                <div className="player-popup-overlay" onClick={() => setPlayerPopupInfo(null)}>
+                    <div className="player-popup-card" onClick={e => e.stopPropagation()}>
+                        <div className="player-popup-handle" />
+                        <div className="player-popup-header">
+                            <div className="player-popup-avatar">
+                                <span className="material-icons-round">{playerPopupInfo.isAi ? 'smart_toy' : 'person'}</span>
+                            </div>
+                            <div>
+                                <p className="player-popup-name">{playerPopupInfo.name}</p>
+                                <p className="player-popup-rank">{playerPopupInfo.isAi ? 'AI Engine' : playerPopupInfo.rank}</p>
+                            </div>
+                        </div>
+                        {!playerPopupInfo.isAi && (
+                            <>
+                                <div className="player-popup-stats">
+                                    <div className="player-popup-stat">
+                                        <div className="player-popup-stat-value">{playerPopupInfo.wins + playerPopupInfo.losses}</div>
+                                        <div className="player-popup-stat-label">{t('board.popup.totalGames')}</div>
+                                    </div>
+                                    <div className="player-popup-stat">
+                                        <div className="player-popup-stat-value">{playerPopupInfo.wins}</div>
+                                        <div className="player-popup-stat-label">{t('board.popup.wins')}</div>
+                                    </div>
+                                    <div className="player-popup-stat">
+                                        <div className="player-popup-stat-value">
+                                            {(playerPopupInfo.wins + playerPopupInfo.losses) > 0
+                                                ? Math.round(playerPopupInfo.wins / (playerPopupInfo.wins + playerPopupInfo.losses) * 100)
+                                                : 0}%
+                                        </div>
+                                        <div className="player-popup-stat-label">{t('board.popup.winRate')}</div>
+                                    </div>
+                                </div>
+                                {playerPopupInfo.rating != null && (
+                                    <div className="player-popup-rating">
+                                        <span className="player-popup-rating-label">{t('board.popup.rating')}</span>
+                                        <span className="player-popup-rating-value">{playerPopupInfo.rating}</span>
+                                    </div>
+                                )}
+                            </>
+                        )}
+                    </div>
+                </div>
+            )}
 
             {/* Action Buttons */}
             <div className="game-action-grid">

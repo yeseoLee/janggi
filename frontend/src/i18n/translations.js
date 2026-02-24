@@ -207,6 +207,12 @@ export const translations = {
         cannotPassInCheck: '장군 상태에서는 한수 쉴 수 없습니다.',
         confirmResign: '정말 기권하시겠습니까?',
       },
+      popup: {
+        totalGames: '총 대국',
+        wins: '승',
+        winRate: '승률',
+        rating: 'ELO 레이팅',
+      },
     },
   },
   en: {
@@ -416,6 +422,12 @@ export const translations = {
         disconnect: 'Opponent disconnected.',
         cannotPassInCheck: 'Cannot pass while in check!',
         confirmResign: 'Are you sure you want to resign?',
+      },
+      popup: {
+        totalGames: 'Games',
+        wins: 'Wins',
+        winRate: 'Win Rate',
+        rating: 'ELO Rating',
       },
     },
   },

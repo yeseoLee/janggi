@@ -6,6 +6,9 @@
   min-height: 100dvh;
   background: var(--color-bg, #F3F4F6);
   overflow-x: hidden;
+  /* Prevent text/element selection (drag artifacts) */
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 /* ===== Game Header ===== */
@@ -32,6 +35,7 @@
   cursor: pointer;
   color: var(--color-text-secondary, #6B7280);
   transition: background 0.2s;
+  touch-action: manipulation;
 }
 
 .game-header-btn:hover {
@@ -94,6 +98,7 @@
 /* ===== Game Main Area ===== */
 .game-main {
   flex: 1;
+  min-height: 0; /* allow flex shrink so board-wrap gets real height */
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -105,20 +110,19 @@
 /* ===== Captured Pieces Bar ===== */
 .captured-bar {
   width: 100%;
-  height: 40px;
-  min-height: 40px;
-  background: #e0e0e0;
+  height: 28px;
+  min-height: 28px;
+  background: rgba(0,0,0,0.12);
   display: flex;
   align-items: center;
-  padding: 0 16px;
-  gap: 4px;
-  box-shadow: inset 0 1px 3px rgba(0,0,0,0.08);
+  padding: 0 8px;
+  gap: 2px;
   flex-shrink: 0;
 }
 
 .captured-bar-piece {
-  width: 28px;
-  height: 28px;
+  width: 22px;
+  height: 22px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -128,18 +132,23 @@
 /* ===== Board Wrapper ===== */
 .game-board-wrap {
   flex: 1;
+  min-height: 0; /* allow flex shrink for proper height calculation */
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 8px;
+  padding: 0;
   width: 100%;
   box-sizing: border-box;
+  overflow: hidden;
 }
 
 /* ===== Board (kept from original — core rendering) ===== */
 .janggi-board {
   position: relative;
-  width: min(78vmin, 600px);
+  /* Height-based sizing: fill available height, constrain to parent width */
+  max-height: 100%;
+  max-width: 100%;
+  width: auto;
   aspect-ratio: 500 / 550;
   background: linear-gradient(140deg, #e7cb8f 0%, #dfbd76 55%, #d8b16a 100%);
   border: 2px solid #5a3a22;
@@ -147,6 +156,9 @@
   box-sizing: border-box;
   overflow: hidden;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+  /* Prevent touch scroll & drag on the board */
+  touch-action: none;
+  -webkit-touch-callout: none;
 }
 
 .janggi-board::before {
@@ -186,7 +198,9 @@
   border-right: none;
 }
 
-.grid-container > .grid-row:last-of-type .grid-cell {
+/* Use explicit class instead of :last-of-type — palace divs come after grid rows
+   so :last-of-type selects .palace-bottom (a div), not the last .grid-row */
+.grid-row-last .grid-cell {
   border-bottom: none;
 }
 
@@ -213,8 +227,8 @@
   position: absolute;
   inset: 0;
   background:
-    linear-gradient(45deg, transparent calc(50% - 0.6px), rgba(28, 18, 11, 0.9) calc(50% - 0.6px), rgba(28, 18, 11, 0.9) calc(50% + 0.6px), transparent calc(50% + 0.6px)),
-    linear-gradient(-45deg, transparent calc(50% - 0.6px), rgba(28, 18, 11, 0.9) calc(50% - 0.6px), rgba(28, 18, 11, 0.9) calc(50% + 0.6px), transparent calc(50% + 0.6px));
+    linear-gradient(45deg, transparent calc(50% - 0.5px), rgba(28, 18, 11, 0.85) calc(50% - 0.5px), rgba(28, 18, 11, 0.85) calc(50% + 0.5px), transparent calc(50% + 0.5px)),
+    linear-gradient(-45deg, transparent calc(50% - 0.5px), rgba(28, 18, 11, 0.85) calc(50% - 0.5px), rgba(28, 18, 11, 0.85) calc(50% + 0.5px), transparent calc(50% + 0.5px));
 }
 
 .palace-top {
@@ -244,6 +258,8 @@
   justify-content: center;
   align-items: center;
   cursor: pointer;
+  -webkit-touch-callout: none;
+  touch-action: none;
 }
 
 .piece-layer .interaction-cell {
@@ -857,6 +873,7 @@
   cursor: pointer;
   transition: all 0.15s;
   box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  touch-action: manipulation;
 }
 
 .game-action-btn:hover:not(:disabled) {
@@ -911,12 +928,140 @@
   margin: 20px auto;
 }
 
+/* ===== Player Profile Popup ===== */
+.player-popup-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.5);
+  z-index: 300;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+.player-popup-card {
+  background: var(--color-surface, #fff);
+  border-radius: 24px 24px 0 0;
+  padding: 20px 24px 40px;
+  width: 100%;
+  max-width: 480px;
+  box-shadow: 0 -8px 32px rgba(0,0,0,0.2);
+  animation: slideUp 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes slideUp {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+
+.player-popup-handle {
+  width: 40px;
+  height: 4px;
+  background: #D1D5DB;
+  border-radius: 4px;
+  margin: 0 auto 16px;
+}
+
+.player-popup-header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 20px;
+}
+
+.player-popup-avatar {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: #E5E7EB;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border: 3px solid #D1D5DB;
+}
+
+.player-popup-avatar .material-icons-round {
+  font-size: 30px;
+  color: #9CA3AF;
+}
+
+.player-popup-name {
+  font-size: 1.2rem;
+  font-weight: 800;
+  color: var(--color-text, #1F2937);
+  margin: 0 0 4px;
+}
+
+.player-popup-rank {
+  font-size: 0.85rem;
+  color: var(--color-primary, #D97726);
+  font-weight: 700;
+}
+
+.player-popup-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 10px;
+}
+
+.player-popup-stat {
+  background: var(--color-bg, #F3F4F6);
+  border-radius: 12px;
+  padding: 12px 8px;
+  text-align: center;
+}
+
+.player-popup-stat-value {
+  font-size: 1.3rem;
+  font-weight: 800;
+  color: var(--color-text, #1F2937);
+  line-height: 1;
+  margin-bottom: 4px;
+}
+
+.player-popup-stat-label {
+  font-size: 0.7rem;
+  color: var(--color-text-muted, #9CA3AF);
+  font-weight: 600;
+}
+
+.player-popup-rating {
+  margin-top: 10px;
+  background: linear-gradient(135deg, #D97726, #F59E0B);
+  border-radius: 12px;
+  padding: 14px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.player-popup-rating-label {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: rgba(255,255,255,0.85);
+}
+
+.player-popup-rating-value {
+  font-size: 1.6rem;
+  font-weight: 900;
+  color: #fff;
+}
+
+/* Make player info areas look clickable */
+.game-player-info {
+  cursor: pointer;
+  border-radius: 12px;
+  padding: 4px 6px;
+  transition: background 0.15s;
+}
+
+.game-player-info:hover {
+  background: rgba(0,0,0,0.04);
+}
+
 /* ===== Responsive ===== */
 @media (max-width: 640px) {
-  .janggi-board {
-    width: min(92vw, 500px);
-  }
-
   .game-bottom-panel {
     padding: 8px 16px 20px;
   }
