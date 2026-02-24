@@ -8,8 +8,7 @@ services:
       POSTGRES_USER: janggi_user
       POSTGRES_PASSWORD: janggi_password
       POSTGRES_DB: janggi_db
-    ports:
-      - "5432:5432"
+    # ports not exposed externally - only accessed via docker network
     volumes:
       - ./backend/init.sql:/docker-entrypoint-initdb.d/init.sql
       - postgres_data:/var/lib/postgresql/data

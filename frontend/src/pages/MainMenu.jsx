@@ -185,7 +185,7 @@ function MainMenu() {
             </div>
             <div className="profile-info">
               <h2>{user.nickname}</h2>
-              <p>Rating: <span className="rating">{user.rating ?? '-'}p</span></p>
+              <p>Rating: <span className="rating">{user.rating ? `${user.rating}p` : '-'}</span></p>
             </div>
             <div className="profile-record">
               <div className="profile-record-label">{t('menu.recordLabel')}</div>

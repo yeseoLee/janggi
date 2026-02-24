@@ -2,25 +2,10 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "frontend",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev"],
-      "port": 5173,
-      "cwd": "frontend"
-    },
-    {
-      "name": "backend",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": ["start"],
-      "port": 3000,
-      "cwd": "backend"
-    },
-    {
-      "name": "ai-server",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": ["start"],
-      "port": 4000,
-      "cwd": "ai-server"
+      "name": "janggi",
+      "runtimeExecutable": "docker",
+      "runtimeArgs": ["compose", "up", "--build", "--force-recreate"],
+      "port": 80
     }
   ]
 }
