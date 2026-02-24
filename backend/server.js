@@ -84,7 +84,7 @@ app.post('/api/auth/register', async (req, res) => {
     const hashedPassword = await bcrypt.hash(password, 10);
     // Grant 10 coins by default (schema default)
     const result = await pool.query(
-      'INSERT INTO users (username, password, nickname, coins) VALUES ($1, $2, $3, $4) RETURNING id, username, nickname, rank, coins, rank_wins, rank_losses',
+      'INSERT INTO users (username, password, nickname, coins) VALUES ($1, $2, $3, $4) RETURNING id, username, nickname, rank, wins, losses, coins, rank_wins, rank_losses, rating',
       [username, hashedPassword, nickname, 10]
     );
     res.status(201).json({ message: 'User registered', user: result.rows[0] });
@@ -125,7 +125,7 @@ app.post('/api/auth/login', async (req, res) => {
 app.get('/api/user/me', authenticateToken, async (req, res) => {
   try {
     const result = await pool.query(
-      'SELECT id, username, nickname, rank, wins, losses, coins, rank_wins, rank_losses FROM users WHERE id = $1',
+      'SELECT id, username, nickname, rank, wins, losses, coins, rank_wins, rank_losses, rating FROM users WHERE id = $1',
       [req.user.id],
     );
     if (result.rows.length === 0) return res.sendStatus(404);
@@ -293,6 +293,10 @@ const initDB = async () => {
         await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS rank_losses INTEGER DEFAULT 0;`);
         await pool.query(`UPDATE users SET rank_wins = COALESCE(rank_wins, 0), rank_losses = COALESCE(rank_losses, 0);`);
 
+        // ELO rating column — default 1000 for all new and existing users.
+        await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS rating INTEGER DEFAULT ${ELO_DEFAULT_RATING};`);
+        await pool.query(`UPDATE users SET rating = ${ELO_DEFAULT_RATING} WHERE rating IS NULL OR rating = 0;`);
+
         await pool.query(`CREATE INDEX IF NOT EXISTS idx_games_played_at ON games (played_at DESC);`);
         await pool.query(`CREATE INDEX IF NOT EXISTS idx_games_move_count ON games (move_count DESC);`);
 
@@ -302,6 +306,33 @@ const initDB = async () => {
     }
 };
 initDB();
+
+// --- ELO Rating System ---
+const ELO_K_FACTOR = 32;
+const ELO_DEFAULT_RATING = 1000;
+const ELO_MIN_RATING = 100;
+
+/**
+ * Calculate new ELO ratings after a game result.
+ * @param {number} winnerRating - Current rating of the winner
+ * @param {number} loserRating  - Current rating of the loser
+ * @returns {{ newWinnerRating: number, newLoserRating: number, ratingChange: number }}
+ */
+function calculateElo(winnerRating, loserRating) {
+    const rW = winnerRating || ELO_DEFAULT_RATING;
+    const rL = loserRating  || ELO_DEFAULT_RATING;
+
+    // Expected scores
+    const expectedWinner = 1 / (1 + Math.pow(10, (rL - rW) / 400));
+    const expectedLoser  = 1 / (1 + Math.pow(10, (rW - rL) / 400));
+
+    const ratingChange = Math.round(ELO_K_FACTOR * (1 - expectedWinner));
+
+    const newWinnerRating = Math.max(ELO_MIN_RATING, Math.round(rW + ELO_K_FACTOR * (1 - expectedWinner)));
+    const newLoserRating  = Math.max(ELO_MIN_RATING, Math.round(rL + ELO_K_FACTOR * (0 - expectedLoser)));
+
+    return { newWinnerRating, newLoserRating, ratingChange };
+}
 
 // --- Matchmaking Helpers ---
 function getRankScore(rankStr) {
@@ -552,14 +583,14 @@ async function processGameEnd(roomId, winnerTeam, resultType = 'unknown') {
         await client.query('BEGIN');
 
         const winnerUserResult = await client.query(
-            `SELECT id, rank, wins, losses, rank_wins, rank_losses
+            `SELECT id, rank, wins, losses, rank_wins, rank_losses, rating
              FROM users
              WHERE id = $1
              FOR UPDATE`,
             [winnerId],
         );
         const loserUserResult = await client.query(
-            `SELECT id, rank, wins, losses, rank_wins, rank_losses
+            `SELECT id, rank, wins, losses, rank_wins, rank_losses, rating
              FROM users
              WHERE id = $1
              FOR UPDATE`,
@@ -586,14 +617,21 @@ async function processGameEnd(roomId, winnerTeam, resultType = 'unknown') {
             'loss',
         );
 
-        // Update total stats and rank progress. (No coin reward on win)
+        // ELO rating calculation
+        const { newWinnerRating, newLoserRating, ratingChange } = calculateElo(
+            winnerUser.rating || ELO_DEFAULT_RATING,
+            loserUser.rating  || ELO_DEFAULT_RATING,
+        );
+
+        // Update total stats, rank progress, and ELO rating.
         await client.query(
             `UPDATE users
              SET wins = $2,
                  losses = $3,
                  rank = $4,
                  rank_wins = $5,
-                 rank_losses = $6
+                 rank_losses = $6,
+                 rating = $7
              WHERE id = $1`,
             [
                 winnerId,
@@ -602,6 +640,7 @@ async function processGameEnd(roomId, winnerTeam, resultType = 'unknown') {
                 winnerRankState.rank,
                 winnerRankState.rankWins,
                 winnerRankState.rankLosses,
+                newWinnerRating,
             ],
         );
         await client.query(
@@ -610,7 +649,8 @@ async function processGameEnd(roomId, winnerTeam, resultType = 'unknown') {
                  losses = $3,
                  rank = $4,
                  rank_wins = $5,
-                 rank_losses = $6
+                 rank_losses = $6,
+                 rating = $7
              WHERE id = $1`,
             [
                 loserId,
@@ -619,6 +659,7 @@ async function processGameEnd(roomId, winnerTeam, resultType = 'unknown') {
                 loserRankState.rank,
                 loserRankState.rankWins,
                 loserRankState.rankLosses,
+                newLoserRating,
             ],
         );
 
@@ -648,7 +689,9 @@ async function processGameEnd(roomId, winnerTeam, resultType = 'unknown') {
         console.log(
             `Game ${roomId} ended. Winner: ${winnerId}, saved ${moveLog.length} ply. ` +
             `winner rank ${winnerUser.rank} -> ${winnerRankState.rank}, ` +
-            `loser rank ${loserUser.rank} -> ${loserRankState.rank}`,
+            `loser rank ${loserUser.rank} -> ${loserRankState.rank}. ` +
+            `ELO: winner ${winnerUser.rating} -> ${newWinnerRating} (+${ratingChange}), ` +
+            `loser ${loserUser.rating} -> ${newLoserRating} (-${ratingChange})`,
         );
         activeGames.delete(roomId);
     } catch (err) {

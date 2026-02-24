@@ -9,6 +9,7 @@ CREATE TABLE IF NOT EXISTS users (
     coins INTEGER DEFAULT 10,
     rank_wins INTEGER DEFAULT 0,
     rank_losses INTEGER DEFAULT 0,
+    rating INTEGER DEFAULT 1000,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
