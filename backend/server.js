@@ -20,6 +20,7 @@ const {
   parseEngineMove,
 } = require('./src/aiMove');
 const { resolveRankAfterResult, normalizeCounter } = require('./src/rank');
+const { calculateMaxWinStreak } = require('./src/streak');
 require('dotenv').config();
 
 const app = express();
@@ -87,7 +88,7 @@ app.post('/api/auth/register', async (req, res) => {
       'INSERT INTO users (username, password, nickname, coins) VALUES ($1, $2, $3, $4) RETURNING id, username, nickname, rank, wins, losses, coins, rank_wins, rank_losses, rating',
       [username, hashedPassword, nickname, 10]
     );
-    res.status(201).json({ message: 'User registered', user: result.rows[0] });
+    res.status(201).json({ message: 'User registered', user: { ...result.rows[0], max_win_streak: 0 } });
   } catch (err) {
     console.error(err);
     if (err.code === '23505') { // Unique violation
@@ -111,10 +112,11 @@ app.post('/api/auth/login', async (req, res) => {
     if (!validPassword) return res.status(401).json({ error: 'Invalid credentials' });
 
     const token = jwt.sign({ id: user.id, username: user.username }, process.env.JWT_SECRET || 'secret_key', { expiresIn: '1h' });
+    const maxWinStreak = await fetchMaxWinStreak(user.id);
     
     // Return user info without password
     const { password: _, ...userInfo } = user;
-    res.json({ token, user: userInfo });
+    res.json({ token, user: { ...userInfo, max_win_streak: maxWinStreak } });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Server error' });
@@ -129,7 +131,9 @@ app.get('/api/user/me', authenticateToken, async (req, res) => {
       [req.user.id],
     );
     if (result.rows.length === 0) return res.sendStatus(404);
-    res.json(result.rows[0]);
+    const userInfo = result.rows[0];
+    const maxWinStreak = await fetchMaxWinStreak(userInfo.id);
+    res.json({ ...userInfo, max_win_streak: maxWinStreak });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Server error' });
@@ -361,6 +365,17 @@ function getWinRate(user) {
 const TEAM_CHO = 'cho';
 const TEAM_HAN = 'han';
 
+async function fetchMaxWinStreak(userId) {
+    const result = await pool.query(
+        `SELECT winner_id, loser_id
+         FROM games
+         WHERE winner_id = $1 OR loser_id = $1
+         ORDER BY COALESCE(ended_at, played_at, started_at) ASC, id ASC`,
+        [userId],
+    );
+    return calculateMaxWinStreak(result.rows, userId);
+}
+
 function isValidTeam(team) {
     return team === TEAM_CHO || team === TEAM_HAN;
 }
@@ -395,6 +410,37 @@ const activeGames = new Map();
 // Socket.io Logic
 let matchQueue = [];
 
+function hasGameStarted(game) {
+    return Boolean(game?.choSetup && game?.hanSetup);
+}
+
+function findActiveRoomBySocketId(socketId) {
+    for (const [roomId, game] of activeGames.entries()) {
+        if (getTeamBySocketId(game, socketId)) {
+            return roomId;
+        }
+    }
+    return null;
+}
+
+function cancelPreGameMatch(roomId, reason = 'cancelled', cancelledBy = null) {
+    const game = activeGames.get(roomId);
+    if (!game || game.finished || hasGameStarted(game)) return false;
+
+    io.to(roomId).emit('match_cancelled', { reason, cancelledBy });
+
+    const roomSockets = io.sockets.adapter.rooms.get(roomId);
+    if (roomSockets) {
+        for (const socketId of roomSockets) {
+            const targetSocket = io.sockets.sockets.get(socketId);
+            targetSocket?.leave(roomId);
+        }
+    }
+
+    activeGames.delete(roomId);
+    return true;
+}
+
 io.on('connection', (socket) => {
   // ... (connection log)
   socket._userInfo = null; 
@@ -403,7 +449,7 @@ io.on('connection', (socket) => {
     socket._userInfo = userInfo; 
     console.log(`User ${socket.id} (${userInfo?.nickname}) looking for match`);
     
-    if (matchQueue.find(u => u.id === socket.id)) return;
+    if (matchQueue.find((u) => u.socket.id === socket.id)) return;
     matchQueue.push({ socket, userInfo });
 
     if (matchQueue.length >= 2) {
@@ -473,9 +519,17 @@ io.on('connection', (socket) => {
       socket.to(data.room).emit('opponent_setup', { team: data.team, setupType: data.setupType });
   });
 
+  socket.on('cancel_match', (data = {}) => {
+      matchQueue = matchQueue.filter((u) => u.socket.id !== socket.id);
+      const roomId = data.room || findActiveRoomBySocketId(socket.id);
+      if (!roomId) return;
+      cancelPreGameMatch(roomId, data.reason || 'cancelled', socket.id);
+  });
+
   socket.on('move', (data) => {
     const game = activeGames.get(data.room);
     if (!game || game.finished) return;
+    if (!hasGameStarted(game)) return;
 
     const actorTeam = getTeamBySocketId(game, socket.id);
     if (!actorTeam) return;
@@ -497,6 +551,7 @@ io.on('connection', (socket) => {
   socket.on('pass', (data) => {
       const game = activeGames.get(data.room);
       if (!game || game.finished) return;
+      if (!hasGameStarted(game)) return;
 
       const actorTeam = getTeamBySocketId(game, socket.id);
       if (!actorTeam) return;
@@ -516,6 +571,11 @@ io.on('connection', (socket) => {
       const game = activeGames.get(data.room);
       if (!game || game.finished) return;
 
+      if (!hasGameStarted(game)) {
+          cancelPreGameMatch(data.room, 'cancelled', socket.id);
+          return;
+      }
+
       const resignTeam = getTeamBySocketId(game, socket.id);
       if (!resignTeam) return;
 
@@ -531,6 +591,7 @@ io.on('connection', (socket) => {
   socket.on('checkmate', (data) => {
       const game = activeGames.get(data.room);
       if (!game || game.finished || !isValidTeam(data.winner)) return;
+      if (!hasGameStarted(game)) return;
 
       const senderTeam = getTeamBySocketId(game, socket.id);
       if (!senderTeam) return;
@@ -550,6 +611,11 @@ io.on('connection', (socket) => {
     for (const [roomId, game] of activeGames.entries()) {
         const disconnectedTeam = getTeamBySocketId(game, socket.id);
         if (!disconnectedTeam || game.finished) continue;
+
+        if (!hasGameStarted(game)) {
+            cancelPreGameMatch(roomId, 'disconnect_before_start', socket.id);
+            break;
+        }
 
         const winnerTeam = getOpponentTeam(disconnectedTeam);
         io.to(roomId).emit('game_over', { winner: winnerTeam, type: 'disconnect' });
@@ -705,7 +771,7 @@ async function processGameEnd(roomId, winnerTeam, resultType = 'unknown') {
 
 
 // --- Replay / Game History API ---
-app.get('/api/games', async (req, res) => {
+app.get('/api/games', authenticateToken, async (req, res) => {
     try {
         const result = await pool.query(`
             SELECT
@@ -731,9 +797,10 @@ app.get('/api/games', async (req, res) => {
             FROM games g
             LEFT JOIN users u1 ON g.winner_id = u1.id
             LEFT JOIN users u2 ON g.loser_id = u2.id
+            WHERE g.winner_id = $1 OR g.loser_id = $1
             ORDER BY g.played_at DESC
             LIMIT 50
-        `);
+        `, [req.user.id]);
         res.json(result.rows);
     } catch (err) {
         console.error(err);
@@ -741,7 +808,7 @@ app.get('/api/games', async (req, res) => {
     }
 });
 
-app.get('/api/games/:id', async (req, res) => {
+app.get('/api/games/:id', authenticateToken, async (req, res) => {
     try {
         const result = await pool.query(`
             SELECT
@@ -754,7 +821,8 @@ app.get('/api/games/:id', async (req, res) => {
             LEFT JOIN users u1 ON g.winner_id = u1.id
             LEFT JOIN users u2 ON g.loser_id = u2.id
             WHERE g.id = $1
-        `, [req.params.id]);
+              AND (g.winner_id = $2 OR g.loser_id = $2)
+        `, [req.params.id, req.user.id]);
         
         if (result.rows.length === 0) return res.status(404).json({ error: 'Game not found' });
         const game = result.rows[0];
