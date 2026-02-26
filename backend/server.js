@@ -199,6 +199,18 @@ app.get('/api/social/users/search', authenticateToken, async (req, res) => {
              AND f.friend_id = u.id
          ) AS is_friend,
          EXISTS (
+           SELECT 1 FROM friend_requests fr
+           WHERE fr.requester_id = $1
+             AND fr.addressee_id = u.id
+             AND fr.status = 'pending'
+         ) AS has_outgoing_request,
+         EXISTS (
+           SELECT 1 FROM friend_requests fr
+           WHERE fr.requester_id = u.id
+             AND fr.addressee_id = $1
+             AND fr.status = 'pending'
+         ) AS has_incoming_request,
+         EXISTS (
            SELECT 1 FROM villains v
            WHERE v.user_id = $1
              AND v.target_user_id = u.id
@@ -211,6 +223,56 @@ app.get('/api/social/users/search', authenticateToken, async (req, res) => {
       [req.user.id, like],
     );
     res.json(result.rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.get('/api/social/friend-requests', authenticateToken, async (req, res) => {
+  try {
+    const incomingResult = await pool.query(
+      `SELECT
+         fr.id,
+         fr.requester_id AS user_id,
+         fr.created_at,
+         u.username,
+         u.nickname,
+         u.rank,
+         u.wins,
+         u.losses,
+         u.rating
+       FROM friend_requests fr
+       JOIN users u ON u.id = fr.requester_id
+       WHERE fr.addressee_id = $1
+         AND fr.status = 'pending'
+       ORDER BY fr.created_at DESC`,
+      [req.user.id],
+    );
+
+    const outgoingResult = await pool.query(
+      `SELECT
+         fr.id,
+         fr.addressee_id AS user_id,
+         fr.created_at,
+         u.username,
+         u.nickname,
+         u.rank,
+         u.wins,
+         u.losses,
+         u.rating
+       FROM friend_requests fr
+       JOIN users u ON u.id = fr.addressee_id
+       WHERE fr.requester_id = $1
+         AND fr.status = 'pending'
+       ORDER BY fr.created_at DESC`,
+      [req.user.id],
+    );
+
+    res.json({
+      incoming: incomingResult.rows,
+      outgoing: outgoingResult.rows,
+    });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Server error' });
@@ -252,27 +314,178 @@ app.post('/api/social/friends', authenticateToken, async (req, res) => {
       return res.status(409).json({ error: 'Cannot add this user due to villain relation' });
     }
 
-    const client = await pool.connect();
-    try {
-      await client.query('BEGIN');
+    const alreadyFriendResult = await pool.query(
+      `SELECT 1
+       FROM friendships
+       WHERE user_id = $1
+         AND friend_id = $2
+       LIMIT 1`,
+      [req.user.id, targetUserId],
+    );
+    if (alreadyFriendResult.rows.length > 0) {
+      return res.json({ ok: true, status: 'already_friend' });
+    }
+
+    const incomingPendingResult = await pool.query(
+      `SELECT id
+       FROM friend_requests
+       WHERE requester_id = $1
+         AND addressee_id = $2
+         AND status = 'pending'
+       LIMIT 1`,
+      [targetUserId, req.user.id],
+    );
+    if (incomingPendingResult.rows.length > 0) {
+      return res.status(409).json({
+        error: 'Incoming friend request already exists',
+        code: 'INCOMING_REQUEST_EXISTS',
+        requestId: incomingPendingResult.rows[0].id,
+      });
+    }
+
+    const outgoingPendingResult = await pool.query(
+      `SELECT id
+       FROM friend_requests
+       WHERE requester_id = $1
+         AND addressee_id = $2
+         AND status = 'pending'
+       LIMIT 1`,
+      [req.user.id, targetUserId],
+    );
+    if (outgoingPendingResult.rows.length > 0) {
+      return res.json({
+        ok: true,
+        status: 'pending',
+        requestId: outgoingPendingResult.rows[0].id,
+      });
+    }
+
+    const createResult = await pool.query(
+      `INSERT INTO friend_requests (requester_id, addressee_id, status, created_at, updated_at)
+       VALUES ($1, $2, 'pending', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+       ON CONFLICT (requester_id, addressee_id)
+       DO UPDATE SET
+           status = 'pending',
+           updated_at = CURRENT_TIMESTAMP
+       RETURNING id`,
+      [req.user.id, targetUserId],
+    );
+
+    res.json({
+      ok: true,
+      status: 'pending',
+      requestId: createResult.rows[0]?.id || null,
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.post('/api/social/friend-requests/:requestId/accept', authenticateToken, async (req, res) => {
+  const requestId = Number(req.params.requestId);
+  if (!Number.isInteger(requestId) || requestId <= 0) {
+    return res.status(400).json({ error: 'Invalid request id' });
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const requestResult = await client.query(
+      `SELECT id, requester_id, addressee_id, status
+       FROM friend_requests
+       WHERE id = $1
+       FOR UPDATE`,
+      [requestId],
+    );
+    if (requestResult.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Friend request not found' });
+    }
+
+    const request = requestResult.rows[0];
+    if (Number(request.addressee_id) !== Number(req.user.id)) {
+      await client.query('ROLLBACK');
+      return res.status(403).json({ error: 'Not allowed' });
+    }
+    if (request.status !== 'pending') {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'Friend request already handled' });
+    }
+
+    const blocked = await areUsersBlocked(request.requester_id, request.addressee_id);
+    if (blocked) {
       await client.query(
-        `INSERT INTO friendships (user_id, friend_id)
-         VALUES ($1, $2)
-         ON CONFLICT (user_id, friend_id) DO NOTHING`,
-        [req.user.id, targetUserId],
-      );
-      await client.query(
-        `INSERT INTO friendships (user_id, friend_id)
-         VALUES ($1, $2)
-         ON CONFLICT (user_id, friend_id) DO NOTHING`,
-        [targetUserId, req.user.id],
+        `UPDATE friend_requests
+         SET status = 'rejected',
+             updated_at = CURRENT_TIMESTAMP
+         WHERE id = $1`,
+        [requestId],
       );
       await client.query('COMMIT');
-    } catch (txErr) {
-      await client.query('ROLLBACK');
-      throw txErr;
-    } finally {
-      client.release();
+      return res.status(409).json({ error: 'Cannot accept due to villain relation', code: 'BLOCKED_USER' });
+    }
+
+    await client.query(
+      `INSERT INTO friendships (user_id, friend_id)
+       VALUES ($1, $2)
+       ON CONFLICT (user_id, friend_id) DO NOTHING`,
+      [request.requester_id, request.addressee_id],
+    );
+    await client.query(
+      `INSERT INTO friendships (user_id, friend_id)
+       VALUES ($1, $2)
+       ON CONFLICT (user_id, friend_id) DO NOTHING`,
+      [request.addressee_id, request.requester_id],
+    );
+
+    await client.query(
+      `UPDATE friend_requests
+       SET status = 'accepted',
+           updated_at = CURRENT_TIMESTAMP
+       WHERE id = $1`,
+      [requestId],
+    );
+    await client.query(
+      `UPDATE friend_requests
+       SET status = 'accepted',
+           updated_at = CURRENT_TIMESTAMP
+       WHERE requester_id = $1
+         AND addressee_id = $2
+         AND status = 'pending'`,
+      [request.addressee_id, request.requester_id],
+    );
+
+    await client.query('COMMIT');
+    res.json({ ok: true });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error(err);
+    res.status(500).json({ error: 'Server error' });
+  } finally {
+    client.release();
+  }
+});
+
+app.post('/api/social/friend-requests/:requestId/reject', authenticateToken, async (req, res) => {
+  const requestId = Number(req.params.requestId);
+  if (!Number.isInteger(requestId) || requestId <= 0) {
+    return res.status(400).json({ error: 'Invalid request id' });
+  }
+
+  try {
+    const updateResult = await pool.query(
+      `UPDATE friend_requests
+       SET status = 'rejected',
+           updated_at = CURRENT_TIMESTAMP
+       WHERE id = $1
+         AND addressee_id = $2
+         AND status = 'pending'
+       RETURNING id`,
+      [requestId, req.user.id],
+    );
+    if (updateResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Friend request not found' });
     }
     res.json({ ok: true });
   } catch (err) {
@@ -288,12 +501,31 @@ app.delete('/api/social/friends/:friendId', authenticateToken, async (req, res) 
   }
 
   try {
-    await pool.query(
-      `DELETE FROM friendships
-       WHERE (user_id = $1 AND friend_id = $2)
-          OR (user_id = $2 AND friend_id = $1)`,
-      [req.user.id, friendId],
-    );
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query(
+        `DELETE FROM friendships
+         WHERE (user_id = $1 AND friend_id = $2)
+            OR (user_id = $2 AND friend_id = $1)`,
+        [req.user.id, friendId],
+      );
+      await client.query(
+        `UPDATE friend_requests
+         SET status = 'cancelled',
+             updated_at = CURRENT_TIMESTAMP
+         WHERE ((requester_id = $1 AND addressee_id = $2)
+             OR (requester_id = $2 AND addressee_id = $1))
+           AND status = 'pending'`,
+        [req.user.id, friendId],
+      );
+      await client.query('COMMIT');
+    } catch (txErr) {
+      await client.query('ROLLBACK');
+      throw txErr;
+    } finally {
+      client.release();
+    }
     res.json({ ok: true });
   } catch (err) {
     console.error(err);
@@ -338,6 +570,15 @@ app.post('/api/social/villains', authenticateToken, async (req, res) => {
         `DELETE FROM friendships
          WHERE (user_id = $1 AND friend_id = $2)
             OR (user_id = $2 AND friend_id = $1)`,
+        [req.user.id, targetUserId],
+      );
+      await client.query(
+        `UPDATE friend_requests
+         SET status = 'rejected',
+             updated_at = CURRENT_TIMESTAMP
+         WHERE ((requester_id = $1 AND addressee_id = $2)
+             OR (requester_id = $2 AND addressee_id = $1))
+           AND status = 'pending'`,
         [req.user.id, targetUserId],
       );
       await client.query(
@@ -710,6 +951,17 @@ const initDB = async () => {
                 CHECK (user_id <> target_user_id)
             );
         `);
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS friend_requests (
+                id SERIAL PRIMARY KEY,
+                requester_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                addressee_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                status VARCHAR(20) NOT NULL DEFAULT 'pending',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                CHECK (requester_id <> addressee_id)
+            );
+        `);
         // Forward-only, idempotent migration for existing installations.
         await pool.query(`ALTER TABLE games ADD COLUMN IF NOT EXISTS cho_setup VARCHAR(50);`);
         await pool.query(`ALTER TABLE games ADD COLUMN IF NOT EXISTS han_setup VARCHAR(50);`);
@@ -733,6 +985,9 @@ const initDB = async () => {
         await pool.query(`CREATE INDEX IF NOT EXISTS idx_games_move_count ON games (move_count DESC);`);
         await pool.query(`CREATE INDEX IF NOT EXISTS idx_friendships_friend_id ON friendships (friend_id);`);
         await pool.query(`CREATE INDEX IF NOT EXISTS idx_villains_target_user_id ON villains (target_user_id);`);
+        await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS uq_friend_requests_pair ON friend_requests (requester_id, addressee_id);`);
+        await pool.query(`CREATE INDEX IF NOT EXISTS idx_friend_requests_addressee_pending ON friend_requests (addressee_id, status, created_at DESC);`);
+        await pool.query(`CREATE INDEX IF NOT EXISTS idx_friend_requests_requester_pending ON friend_requests (requester_id, status, created_at DESC);`);
 
         console.log("DB: Games table checked/created");
     } catch (err) {
