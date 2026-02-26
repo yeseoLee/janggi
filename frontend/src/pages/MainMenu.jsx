@@ -8,6 +8,34 @@ import { normalizeResultMethod } from '../game/result';
 import { useFriendlyMatchSocket } from '../hooks/useFriendlyMatchSocket';
 import { useLobbyChatSocket } from '../hooks/useLobbyChatSocket';
 
+function parseRank(rankStr) {
+  if (typeof rankStr !== 'string') return null;
+  const gupMatch = rankStr.match(/^([1-9]|1[0-8])급$/);
+  if (gupMatch) return { type: 'gup', value: Number(gupMatch[1]) };
+
+  const danMatch = rankStr.match(/^([1-9])단$/);
+  if (danMatch) return { type: 'dan', value: Number(danMatch[1]) };
+
+  return null;
+}
+
+function getRankThreshold(rankStr) {
+  const parsed = parseRank(rankStr) || { type: 'gup', value: 18 };
+  if (parsed.type === 'dan') return 7;
+  if (parsed.value >= 10) return 3;
+  return 5;
+}
+
+function canPromote(rankStr) {
+  const parsed = parseRank(rankStr);
+  return Boolean(parsed) && !(parsed.type === 'dan' && parsed.value >= 9);
+}
+
+function canDemote(rankStr) {
+  const parsed = parseRank(rankStr);
+  return Boolean(parsed) && !(parsed.type === 'gup' && parsed.value >= 18);
+}
+
 function MainMenu() {
   const { user, token, refreshUser } = useAuth();
   const navigate = useNavigate();
@@ -201,13 +229,24 @@ function MainMenu() {
     navigate(`/game?mode=friendly&matchId=${matchId}`);
   };
 
-  const winRate = user && (user.wins + user.losses > 0)
-    ? ((user.wins / (user.wins + user.losses)) * 100).toFixed(1)
-    : '0.0';
-  const maxWinStreakRaw = Number(user?.max_win_streak);
-  const maxWinStreak = Number.isFinite(maxWinStreakRaw)
-    ? Math.max(0, Math.floor(maxWinStreakRaw))
+  const rankWins = Number.isFinite(Number(user?.rank_wins))
+    ? Math.max(0, Math.floor(Number(user.rank_wins)))
     : 0;
+  const rankLosses = Number.isFinite(Number(user?.rank_losses))
+    ? Math.max(0, Math.floor(Number(user.rank_losses)))
+    : 0;
+  const rankedTotal = rankWins + rankLosses;
+  const winRate = rankedTotal > 0
+    ? ((rankWins / rankedTotal) * 100).toFixed(1)
+    : '0.0';
+  const currentRank = user?.rank || '18급';
+  const rankThreshold = getRankThreshold(currentRank);
+  const isPromotionAvailable = canPromote(currentRank);
+  const isDemotionAvailable = canDemote(currentRank);
+  const winsToPromotion = isPromotionAvailable ? Math.max(rankThreshold - rankWins, 0) : 0;
+  const lossesToDemotion = isDemotionAvailable ? Math.max(rankThreshold - rankLosses, 0) : 0;
+  const promotionProgressPercent = Math.min((rankWins / rankThreshold) * 100, 100);
+  const demotionProgressPercent = Math.min((rankLosses / rankThreshold) * 100, 100);
 
   if (!user) {
     return (
@@ -323,16 +362,16 @@ function MainMenu() {
               <p>Rating: <span className="rating">{user.rating ? `${user.rating}p` : '-'}</span></p>
             </div>
             <div className="profile-record">
-              <div className="profile-record-label">{t('menu.recordLabel')}</div>
+              <div className="profile-record-label">{t('profile.rankRecord')}</div>
               <div className="profile-record-value">
-                {user.wins ?? 0}{t('records.winShort')} {user.losses ?? 0}{t('records.lossShort')}
+                {rankWins}{t('records.winShort')} {rankLosses}{t('records.lossShort')}
               </div>
             </div>
           </div>
           <div className="profile-card-stats">
             <div className="profile-stat">
-              <div className="profile-stat-label">{t('menu.winStreak')}</div>
-              <div className="profile-stat-value primary">{maxWinStreak}</div>
+              <div className="profile-stat-label">{t('profile.currentRank')}</div>
+              <div className="profile-stat-value primary">{currentRank}</div>
             </div>
             <div className="profile-stat-divider" />
             <div className="profile-stat">
@@ -345,6 +384,28 @@ function MainMenu() {
               <div className="profile-stat-value gold">
                 <span className="material-icons-round">monetization_on</span>
                 {user.coins?.toLocaleString() ?? 0}
+              </div>
+            </div>
+          </div>
+          <div className="rank-progress-card">
+            <div className="rank-progress-head">
+              <span>
+                {isPromotionAvailable
+                  ? t('menu.rankProgressPromotionLeft', { count: winsToPromotion })
+                  : t('menu.rankProgressPromotionLocked')}
+              </span>
+              <span>
+                {isDemotionAvailable
+                  ? t('menu.rankProgressDemotionLeft', { count: lossesToDemotion })
+                  : t('menu.rankProgressDemotionLocked')}
+              </span>
+            </div>
+            <div className="rank-progress-track" aria-hidden="true">
+              <div className="rank-progress-half promotion">
+                <div className="rank-progress-fill" style={{ width: `${isPromotionAvailable ? promotionProgressPercent : 0}%` }} />
+              </div>
+              <div className="rank-progress-half demotion">
+                <div className="rank-progress-fill" style={{ width: `${isDemotionAvailable ? demotionProgressPercent : 0}%` }} />
               </div>
             </div>
           </div>

@@ -508,6 +508,68 @@
   margin: 0 8px;
 }
 
+.rank-progress-card {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--color-border-light);
+  position: relative;
+  z-index: 1;
+}
+
+.rank-progress-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.74rem;
+  font-weight: 700;
+  color: var(--color-text-secondary);
+  margin-bottom: 8px;
+}
+
+.rank-progress-head span:first-child {
+  color: #1d4ed8;
+}
+
+.rank-progress-head span:last-child {
+  color: #b91c1c;
+}
+
+.rank-progress-track {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.rank-progress-half {
+  position: relative;
+  height: 10px;
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.rank-progress-half.promotion {
+  background: #dbeafe;
+}
+
+.rank-progress-half.demotion {
+  background: #fee2e2;
+}
+
+.rank-progress-half .rank-progress-fill {
+  height: 100%;
+  border-radius: inherit;
+}
+
+.rank-progress-half.promotion .rank-progress-fill {
+  background: linear-gradient(90deg, #60a5fa, #2563eb);
+}
+
+.rank-progress-half.demotion .rank-progress-fill {
+  background: linear-gradient(90deg, #fca5a5, #dc2626);
+}
+
 /* Match Buttons */
 .match-buttons {
   display: grid;
