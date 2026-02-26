@@ -178,6 +178,305 @@ app.get('/api/user/me', authenticateToken, async (req, res) => {
   }
 });
 
+app.get('/api/social/users/search', authenticateToken, async (req, res) => {
+  const q = String(req.query.q || '').trim();
+  if (!q) return res.json([]);
+
+  try {
+    const like = `%${q}%`;
+    const result = await pool.query(
+      `SELECT
+         u.id,
+         u.username,
+         u.nickname,
+         u.rank,
+         u.wins,
+         u.losses,
+         u.rating,
+         EXISTS (
+           SELECT 1 FROM friendships f
+           WHERE f.user_id = $1
+             AND f.friend_id = u.id
+         ) AS is_friend,
+         EXISTS (
+           SELECT 1 FROM villains v
+           WHERE v.user_id = $1
+             AND v.target_user_id = u.id
+         ) AS is_villain
+       FROM users u
+       WHERE u.id <> $1
+         AND (u.nickname ILIKE $2 OR u.username ILIKE $2)
+       ORDER BY u.nickname ASC, u.username ASC
+       LIMIT 20`,
+      [req.user.id, like],
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.get('/api/social/friends', authenticateToken, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT u.id, u.username, u.nickname, u.rank, u.wins, u.losses, u.rating, f.created_at
+       FROM friendships f
+       JOIN users u ON u.id = f.friend_id
+       WHERE f.user_id = $1
+       ORDER BY u.nickname ASC, u.username ASC`,
+      [req.user.id],
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.post('/api/social/friends', authenticateToken, async (req, res) => {
+  const targetUserId = Number(req.body?.targetUserId);
+  if (!Number.isInteger(targetUserId) || targetUserId <= 0) {
+    return res.status(400).json({ error: 'Invalid target user' });
+  }
+  if (targetUserId === Number(req.user.id)) {
+    return res.status(400).json({ error: 'Cannot add yourself' });
+  }
+
+  try {
+    const targetInfo = await fetchUserPublicInfo(targetUserId);
+    if (!targetInfo) return res.status(404).json({ error: 'User not found' });
+
+    const blocked = await areUsersBlocked(req.user.id, targetUserId);
+    if (blocked) {
+      return res.status(409).json({ error: 'Cannot add this user due to villain relation' });
+    }
+
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query(
+        `INSERT INTO friendships (user_id, friend_id)
+         VALUES ($1, $2)
+         ON CONFLICT (user_id, friend_id) DO NOTHING`,
+        [req.user.id, targetUserId],
+      );
+      await client.query(
+        `INSERT INTO friendships (user_id, friend_id)
+         VALUES ($1, $2)
+         ON CONFLICT (user_id, friend_id) DO NOTHING`,
+        [targetUserId, req.user.id],
+      );
+      await client.query('COMMIT');
+    } catch (txErr) {
+      await client.query('ROLLBACK');
+      throw txErr;
+    } finally {
+      client.release();
+    }
+    res.json({ ok: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.delete('/api/social/friends/:friendId', authenticateToken, async (req, res) => {
+  const friendId = Number(req.params.friendId);
+  if (!Number.isInteger(friendId) || friendId <= 0) {
+    return res.status(400).json({ error: 'Invalid friend id' });
+  }
+
+  try {
+    await pool.query(
+      `DELETE FROM friendships
+       WHERE (user_id = $1 AND friend_id = $2)
+          OR (user_id = $2 AND friend_id = $1)`,
+      [req.user.id, friendId],
+    );
+    res.json({ ok: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.get('/api/social/villains', authenticateToken, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT u.id, u.username, u.nickname, u.rank, u.wins, u.losses, u.rating, v.created_at
+       FROM villains v
+       JOIN users u ON u.id = v.target_user_id
+       WHERE v.user_id = $1
+       ORDER BY v.created_at DESC`,
+      [req.user.id],
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.post('/api/social/villains', authenticateToken, async (req, res) => {
+  const targetUserId = Number(req.body?.targetUserId);
+  if (!Number.isInteger(targetUserId) || targetUserId <= 0) {
+    return res.status(400).json({ error: 'Invalid target user' });
+  }
+  if (targetUserId === Number(req.user.id)) {
+    return res.status(400).json({ error: 'Cannot villain yourself' });
+  }
+
+  try {
+    const targetInfo = await fetchUserPublicInfo(targetUserId);
+    if (!targetInfo) return res.status(404).json({ error: 'User not found' });
+
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query(
+        `DELETE FROM friendships
+         WHERE (user_id = $1 AND friend_id = $2)
+            OR (user_id = $2 AND friend_id = $1)`,
+        [req.user.id, targetUserId],
+      );
+      await client.query(
+        `INSERT INTO villains (user_id, target_user_id)
+         VALUES ($1, $2)
+         ON CONFLICT (user_id, target_user_id) DO NOTHING`,
+        [req.user.id, targetUserId],
+      );
+      await client.query('COMMIT');
+    } catch (txErr) {
+      await client.query('ROLLBACK');
+      throw txErr;
+    } finally {
+      client.release();
+    }
+    res.json({ ok: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.delete('/api/social/villains/:targetUserId', authenticateToken, async (req, res) => {
+  const targetUserId = Number(req.params.targetUserId);
+  if (!Number.isInteger(targetUserId) || targetUserId <= 0) {
+    return res.status(400).json({ error: 'Invalid target user id' });
+  }
+
+  try {
+    await pool.query(
+      `DELETE FROM villains
+       WHERE user_id = $1
+         AND target_user_id = $2`,
+      [req.user.id, targetUserId],
+    );
+    res.json({ ok: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.get('/api/social/friends/:friendId/games', authenticateToken, async (req, res) => {
+  const friendId = Number(req.params.friendId);
+  if (!Number.isInteger(friendId) || friendId <= 0) {
+    return res.status(400).json({ error: 'Invalid friend id' });
+  }
+
+  try {
+    const friendResult = await pool.query(
+      `SELECT id, username, nickname, rank, wins, losses, rating
+       FROM users
+       WHERE id = $1`,
+      [friendId],
+    );
+    if (friendResult.rows.length === 0) return res.status(404).json({ error: 'Friend not found' });
+
+    const friendship = await pool.query(
+      `SELECT 1
+       FROM friendships
+       WHERE user_id = $1
+         AND friend_id = $2
+       LIMIT 1`,
+      [req.user.id, friendId],
+    );
+    if (friendship.rows.length === 0) return res.status(403).json({ error: 'Not a friend' });
+
+    const gamesResult = await pool.query(
+      `SELECT
+          g.id,
+          g.played_at,
+          g.started_at,
+          g.ended_at,
+          COALESCE(g.game_mode, 'online') AS game_mode,
+          g.winner_team,
+          g.loser_team,
+          COALESCE(g.result_type, 'unknown') AS result_type,
+          COALESCE(
+              g.move_count,
+              CASE
+                  WHEN g.move_log IS NOT NULL AND jsonb_typeof(g.move_log) = 'array'
+                      THEN jsonb_array_length(g.move_log)
+                  ELSE 0
+              END
+          ) AS move_count,
+          COALESCE(
+              u1.nickname,
+              CASE WHEN COALESCE(g.game_mode, 'online') = 'ai' THEN 'AI' END
+          ) AS winner_name,
+          COALESCE(
+              u2.nickname,
+              CASE WHEN COALESCE(g.game_mode, 'online') = 'ai' THEN 'AI' END
+          ) AS loser_name,
+          CASE
+              WHEN g.winner_team = 'cho'
+                  THEN COALESCE(u1.nickname, CASE WHEN COALESCE(g.game_mode, 'online') = 'ai' THEN 'AI' END)
+              ELSE COALESCE(u2.nickname, CASE WHEN COALESCE(g.game_mode, 'online') = 'ai' THEN 'AI' END)
+          END AS cho_name,
+          CASE
+              WHEN g.winner_team = 'han'
+                  THEN COALESCE(u1.nickname, CASE WHEN COALESCE(g.game_mode, 'online') = 'ai' THEN 'AI' END)
+              ELSE COALESCE(u2.nickname, CASE WHEN COALESCE(g.game_mode, 'online') = 'ai' THEN 'AI' END)
+          END AS han_name,
+          CASE
+              WHEN g.winner_id = $1 THEN 'win'
+              WHEN g.loser_id = $1 THEN 'loss'
+              ELSE 'draw'
+          END AS my_result,
+          CASE
+              WHEN g.winner_id = $1 THEN g.winner_team
+              WHEN g.loser_id = $1 THEN g.loser_team
+              ELSE NULL
+          END AS my_team,
+          CASE
+              WHEN g.winner_id = $1
+                  THEN COALESCE(u2.nickname, CASE WHEN COALESCE(g.game_mode, 'online') = 'ai' THEN 'AI' END)
+              WHEN g.loser_id = $1
+                  THEN COALESCE(u1.nickname, CASE WHEN COALESCE(g.game_mode, 'online') = 'ai' THEN 'AI' END)
+              ELSE NULL
+          END AS opponent_name
+       FROM games g
+       LEFT JOIN users u1 ON g.winner_id = u1.id
+       LEFT JOIN users u2 ON g.loser_id = u2.id
+       WHERE g.winner_id = $1 OR g.loser_id = $1
+       ORDER BY g.played_at DESC
+       LIMIT 50`,
+      [friendId],
+    );
+
+    res.json({
+      friend: friendResult.rows[0],
+      games: gamesResult.rows,
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // Spend coins when entering an AI match.
 app.post('/api/coins/spend-ai-match', authenticateToken, async (req, res) => {
   try {
@@ -393,6 +692,24 @@ const initDB = async () => {
                 played_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
         `);
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS friendships (
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                friend_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (user_id, friend_id),
+                CHECK (user_id <> friend_id)
+            );
+        `);
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS villains (
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                target_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (user_id, target_user_id),
+                CHECK (user_id <> target_user_id)
+            );
+        `);
         // Forward-only, idempotent migration for existing installations.
         await pool.query(`ALTER TABLE games ADD COLUMN IF NOT EXISTS cho_setup VARCHAR(50);`);
         await pool.query(`ALTER TABLE games ADD COLUMN IF NOT EXISTS han_setup VARCHAR(50);`);
@@ -414,6 +731,8 @@ const initDB = async () => {
 
         await pool.query(`CREATE INDEX IF NOT EXISTS idx_games_played_at ON games (played_at DESC);`);
         await pool.query(`CREATE INDEX IF NOT EXISTS idx_games_move_count ON games (move_count DESC);`);
+        await pool.query(`CREATE INDEX IF NOT EXISTS idx_friendships_friend_id ON friendships (friend_id);`);
+        await pool.query(`CREATE INDEX IF NOT EXISTS idx_villains_target_user_id ON villains (target_user_id);`);
 
         console.log("DB: Games table checked/created");
     } catch (err) {
@@ -471,6 +790,43 @@ function getWinRate(user) {
     const total = (user.wins || 0) + (user.losses || 0);
     if (total === 0) return 0;
     return (user.wins / total);
+}
+
+async function fetchUserPublicInfo(userId) {
+    if (!userId) return null;
+    const result = await pool.query(
+        `SELECT id, username, nickname, rank, wins, losses, rating
+         FROM users
+         WHERE id = $1`,
+        [userId],
+    );
+    return result.rows[0] || null;
+}
+
+async function areUsersBlocked(userAId, userBId) {
+    if (!userAId || !userBId) return false;
+    const result = await pool.query(
+        `SELECT 1
+         FROM villains
+         WHERE (user_id = $1 AND target_user_id = $2)
+            OR (user_id = $2 AND target_user_id = $1)
+         LIMIT 1`,
+        [userAId, userBId],
+    );
+    return result.rows.length > 0;
+}
+
+async function areUsersFriends(userAId, userBId) {
+    if (!userAId || !userBId) return false;
+    const result = await pool.query(
+        `SELECT 1
+         FROM friendships
+         WHERE user_id = $1
+           AND friend_id = $2
+         LIMIT 1`,
+        [userAId, userBId],
+    );
+    return result.rows.length > 0;
 }
 
 const TEAM_CHO = 'cho';
@@ -581,9 +937,12 @@ function getSocketAuthToken(socket) {
 // Game State Memory
 // roomId -> { cho, han, mode, choSetup, hanSetup, moveLog, nextTurn, startTime, finished }
 const activeGames = new Map();
+const pendingFriendlyInvites = new Map();
+const pendingFriendlyMatches = new Map();
 
 // Socket.io Logic
 let matchQueue = [];
+let matchmakingInProgress = false;
 
 function hasGameStarted(game) {
     return Boolean(game?.choSetup && game?.hanSetup);
@@ -832,6 +1191,12 @@ function cancelPreGameMatch(roomId, reason = 'cancelled', cancelledBy = null) {
 
     clearTurnTimeout(game);
     activeGames.delete(roomId);
+    for (const [matchId, pendingMatch] of pendingFriendlyMatches.entries()) {
+        if (pendingMatch?.roomId === roomId) {
+            pendingFriendlyMatches.delete(matchId);
+            break;
+        }
+    }
     return true;
 }
 
@@ -888,6 +1253,141 @@ function terminateSessionSockets(userId, sessionRecord, reason = 'duplicate_logi
     sessionRecord.sockets.clear();
 }
 
+function getSessionSocketIds(userId) {
+    const record = activeSessions.get(getSessionKey(userId));
+    if (!record) return [];
+    return Array.from(record.sockets || []);
+}
+
+function emitToUserSockets(userId, eventName, payload) {
+    const socketIds = getSessionSocketIds(userId);
+    let emitted = 0;
+    for (const socketId of socketIds) {
+        const targetSocket = io.sockets.sockets.get(socketId);
+        if (!targetSocket) continue;
+        targetSocket.emit(eventName, payload);
+        emitted += 1;
+    }
+    return emitted;
+}
+
+function buildRealtimeGameState({ roomId, choUser, hanUser, mode }) {
+    const gameState = {
+        cho: { id: choUser.id, socketId: choUser.socketId || null, userInfo: choUser.userInfo || null },
+        han: { id: hanUser.id, socketId: hanUser.socketId || null, userInfo: hanUser.userInfo || null },
+        mode,
+        choSetup: null,
+        hanSetup: null,
+        moveLog: [],
+        nextTurn: TEAM_CHO,
+        clocks: {
+            [TEAM_CHO]: createInitialTeamClock(),
+            [TEAM_HAN]: createInitialTeamClock(),
+        },
+        turnStartedAt: null,
+        turnByoyomiRemainingMs: null,
+        turnTimeoutId: null,
+        startTime: null,
+        finished: false,
+    };
+    activeGames.set(roomId, gameState);
+    return gameState;
+}
+
+function pickChoHanPlayers(p1, p2) {
+    const score1 = getRankScore(p1.userInfo?.rank);
+    const score2 = getRankScore(p2.userInfo?.rank);
+
+    if (score1 < score2) return { choPlayer: p1, hanPlayer: p2 };
+    if (score2 < score1) return { choPlayer: p2, hanPlayer: p1 };
+
+    const rate1 = getWinRate(p1.userInfo);
+    const rate2 = getWinRate(p2.userInfo);
+    if (rate1 < rate2) return { choPlayer: p1, hanPlayer: p2 };
+    if (rate2 < rate1) return { choPlayer: p2, hanPlayer: p1 };
+
+    return Math.random() < 0.5
+        ? { choPlayer: p1, hanPlayer: p2 }
+        : { choPlayer: p2, hanPlayer: p1 };
+}
+
+async function pickOnlineMatchPairFromQueue() {
+    if (matchQueue.length < 2) return null;
+
+    for (let i = 0; i < matchQueue.length; i += 1) {
+        const left = matchQueue[i];
+        if (!left?.socket?.connected) continue;
+        for (let j = i + 1; j < matchQueue.length; j += 1) {
+            const right = matchQueue[j];
+            if (!right?.socket?.connected) continue;
+
+            const blocked = await areUsersBlocked(left.userInfo?.id, right.userInfo?.id);
+            if (blocked) continue;
+
+            const [first] = matchQueue.splice(j, 1);
+            const [second] = matchQueue.splice(i, 1);
+            return [second, first];
+        }
+    }
+    return null;
+}
+
+function cleanupQueueDisconnectedSockets() {
+    matchQueue = matchQueue.filter((queued) => queued?.socket?.connected);
+}
+
+function createOnlineMatch(choPlayer, hanPlayer) {
+    const roomId = `game_${choPlayer.socket.id}_${hanPlayer.socket.id}`;
+    choPlayer.socket.join(roomId);
+    hanPlayer.socket.join(roomId);
+
+    buildRealtimeGameState({
+        roomId,
+        choUser: { id: choPlayer.userInfo.id, socketId: choPlayer.socket.id, userInfo: choPlayer.userInfo },
+        hanUser: { id: hanPlayer.userInfo.id, socketId: hanPlayer.socket.id, userInfo: hanPlayer.userInfo },
+        mode: 'online',
+    });
+
+    console.log(`Match: [Cho] ${choPlayer.userInfo.nickname} vs [Han] ${hanPlayer.userInfo.nickname}`);
+    choPlayer.socket.emit('match_found', { room: roomId, team: TEAM_CHO, opponent: hanPlayer.userInfo });
+    hanPlayer.socket.emit('match_found', { room: roomId, team: TEAM_HAN, opponent: choPlayer.userInfo });
+}
+
+async function tryMatchQueue() {
+    if (matchmakingInProgress) return;
+    matchmakingInProgress = true;
+    try {
+        cleanupQueueDisconnectedSockets();
+        while (matchQueue.length >= 2) {
+            const pair = await pickOnlineMatchPairFromQueue();
+            if (!pair) break;
+            const { choPlayer, hanPlayer } = pickChoHanPlayers(pair[0], pair[1]);
+            createOnlineMatch(choPlayer, hanPlayer);
+            cleanupQueueDisconnectedSockets();
+        }
+    } finally {
+        matchmakingInProgress = false;
+    }
+}
+
+function cleanupExpiredFriendlyInvites(nowMs = Date.now()) {
+    for (const [inviteId, invite] of pendingFriendlyInvites.entries()) {
+        const createdAtMs = Number(invite?.createdAtMs) || 0;
+        if (nowMs - createdAtMs > 60 * 1000) {
+            pendingFriendlyInvites.delete(inviteId);
+        }
+    }
+}
+
+function cleanupExpiredFriendlyMatches(nowMs = Date.now()) {
+    for (const [matchId, match] of pendingFriendlyMatches.entries()) {
+        const createdAtMs = Number(match?.createdAtMs) || 0;
+        if (nowMs - createdAtMs > 5 * 60 * 1000) {
+            pendingFriendlyMatches.delete(matchId);
+        }
+    }
+}
+
 io.on('connection', (socket) => {
   // ... (connection log)
   socket._userInfo = null;
@@ -915,7 +1415,7 @@ io.on('connection', (socket) => {
     return;
   }
 
-  socket.on('find_match', (userInfo) => {
+  socket.on('find_match', async (userInfo) => {
     if (!socket._authUserId || !socket._sessionId) return;
     if (!isSessionActive(socket._authUserId, socket._sessionId)) {
       socket.emit('session_terminated', { reason: 'duplicate_login' });
@@ -926,71 +1426,195 @@ io.on('connection', (socket) => {
 
     socket._userInfo = { ...userInfo, id: socket._authUserId };
     console.log(`User ${socket.id} (${userInfo?.nickname}) looking for match`);
-    
+
     if (matchQueue.find((u) => u.socket.id === socket.id)) return;
     matchQueue.push({ socket, userInfo: socket._userInfo });
+    await tryMatchQueue();
+  });
 
-    if (matchQueue.length >= 2) {
-      const p1 = matchQueue.shift();
-      const p2 = matchQueue.shift();
-      
-      const score1 = getRankScore(p1.userInfo?.rank);
-      const score2 = getRankScore(p2.userInfo?.rank);
-      
-      let choPlayer, hanPlayer;
-      
-      if (score1 < score2) {
-          choPlayer = p1; hanPlayer = p2;
-      } else if (score2 < score1) {
-          choPlayer = p2; hanPlayer = p1;
-      } else {
-          // Rank Tied -> Check Win Rate
-          const rate1 = getWinRate(p1.userInfo);
-          const rate2 = getWinRate(p2.userInfo);
-          if (rate1 < rate2) {
-              choPlayer = p1; hanPlayer = p2;
-          } else if (rate2 < rate1) {
-              choPlayer = p2; hanPlayer = p1;
-          } else {
-              // Tied -> Random
-              if (Math.random() < 0.5) {
-                  choPlayer = p1; hanPlayer = p2;
-              } else {
-                  choPlayer = p2; hanPlayer = p1;
-              }
-          }
+  socket.on('friendly_invite_send', async (data = {}, callback) => {
+      const respond = typeof callback === 'function' ? callback : () => {};
+      if (!socket._authUserId || !socket._sessionId) return respond({ ok: false, error: 'NOT_AUTHORIZED' });
+      if (!isSessionActive(socket._authUserId, socket._sessionId)) {
+          socket.emit('session_terminated', { reason: 'duplicate_login' });
+          socket.disconnect(true);
+          return respond({ ok: false, error: 'SESSION_EXPIRED' });
       }
 
-      const roomId = `game_${choPlayer.socket.id}_${hanPlayer.socket.id}`;
-      choPlayer.socket.join(roomId);
-      hanPlayer.socket.join(roomId);
-      
-      // Store Game State
-      activeGames.set(roomId, {
-          cho: { id: choPlayer.userInfo.id, socketId: choPlayer.socket.id },
-          han: { id: hanPlayer.userInfo.id, socketId: hanPlayer.socket.id },
-          mode: 'online',
-          choSetup: null,
-          hanSetup: null,
-          moveLog: [],
-          nextTurn: TEAM_CHO,
-          clocks: {
-              [TEAM_CHO]: createInitialTeamClock(),
-              [TEAM_HAN]: createInitialTeamClock(),
-          },
-          turnStartedAt: null,
-          turnByoyomiRemainingMs: null,
-          turnTimeoutId: null,
-          startTime: null,
-          finished: false,
+      const targetUserId = Number(data.targetUserId);
+      if (!Number.isInteger(targetUserId) || targetUserId <= 0 || targetUserId === Number(socket._authUserId)) {
+          return respond({ ok: false, error: 'INVALID_TARGET' });
+      }
+
+      try {
+          cleanupExpiredFriendlyInvites();
+          const isFriend = await areUsersFriends(socket._authUserId, targetUserId);
+          if (!isFriend) return respond({ ok: false, error: 'NOT_FRIEND' });
+
+          const blocked = await areUsersBlocked(socket._authUserId, targetUserId);
+          if (blocked) return respond({ ok: false, error: 'BLOCKED_USER' });
+
+          const senderInfo = await fetchUserPublicInfo(socket._authUserId);
+          const targetInfo = await fetchUserPublicInfo(targetUserId);
+          if (!senderInfo || !targetInfo) return respond({ ok: false, error: 'USER_NOT_FOUND' });
+
+          const targetSocketIds = getSessionSocketIds(targetUserId)
+              .filter((socketId) => Boolean(io.sockets.sockets.get(socketId)));
+          if (targetSocketIds.length === 0) return respond({ ok: false, error: 'TARGET_OFFLINE' });
+
+          const inviteId = randomUUID();
+          pendingFriendlyInvites.set(inviteId, {
+              inviteId,
+              fromUserId: Number(socket._authUserId),
+              toUserId: targetUserId,
+              fromInfo: senderInfo,
+              toInfo: targetInfo,
+              createdAtMs: Date.now(),
+              status: 'pending',
+          });
+
+          emitToUserSockets(targetUserId, 'friendly_invite_received', {
+              inviteId,
+              from: senderInfo,
+          });
+          respond({ ok: true, inviteId });
+      } catch (err) {
+          console.error(err);
+          respond({ ok: false, error: 'SERVER_ERROR' });
+      }
+  });
+
+  socket.on('friendly_invite_decline', (data = {}, callback) => {
+      const respond = typeof callback === 'function' ? callback : () => {};
+      const inviteId = typeof data.inviteId === 'string' ? data.inviteId : '';
+      const invite = pendingFriendlyInvites.get(inviteId);
+      if (!invite) return respond({ ok: true });
+      if (invite.toUserId !== Number(socket._authUserId)) return respond({ ok: false, error: 'NOT_ALLOWED' });
+
+      pendingFriendlyInvites.delete(inviteId);
+      emitToUserSockets(invite.fromUserId, 'friendly_invite_declined', { inviteId, toUserId: invite.toUserId });
+      respond({ ok: true });
+  });
+
+  socket.on('friendly_invite_accept', async (data = {}, callback) => {
+      const respond = typeof callback === 'function' ? callback : () => {};
+      if (!socket._authUserId || !socket._sessionId) return respond({ ok: false, error: 'NOT_AUTHORIZED' });
+
+      const inviteId = typeof data.inviteId === 'string' ? data.inviteId : '';
+      const invite = pendingFriendlyInvites.get(inviteId);
+      if (!invite) return respond({ ok: false, error: 'INVITE_NOT_FOUND' });
+      if (invite.toUserId !== Number(socket._authUserId)) return respond({ ok: false, error: 'NOT_ALLOWED' });
+
+      cleanupExpiredFriendlyInvites();
+      cleanupExpiredFriendlyMatches();
+      if (!pendingFriendlyInvites.has(inviteId)) return respond({ ok: false, error: 'INVITE_EXPIRED' });
+
+      try {
+          const blocked = await areUsersBlocked(invite.fromUserId, invite.toUserId);
+          if (blocked) {
+              pendingFriendlyInvites.delete(inviteId);
+              return respond({ ok: false, error: 'BLOCKED_USER' });
+          }
+
+          const stillFriends = await areUsersFriends(invite.fromUserId, invite.toUserId);
+          if (!stillFriends) {
+              pendingFriendlyInvites.delete(inviteId);
+              return respond({ ok: false, error: 'NOT_FRIEND' });
+          }
+
+          const fromInfo = await fetchUserPublicInfo(invite.fromUserId);
+          const toInfo = await fetchUserPublicInfo(invite.toUserId);
+          if (!fromInfo || !toInfo) {
+              pendingFriendlyInvites.delete(inviteId);
+              return respond({ ok: false, error: 'USER_NOT_FOUND' });
+          }
+
+          const pair = pickChoHanPlayers({ userInfo: fromInfo }, { userInfo: toInfo });
+          const fromIsCho = pair.choPlayer.userInfo.id === fromInfo.id;
+          const choInfo = fromIsCho ? fromInfo : toInfo;
+          const hanInfo = fromIsCho ? toInfo : fromInfo;
+          const matchId = randomUUID();
+
+          pendingFriendlyMatches.set(matchId, {
+              matchId,
+              roomId: `friendly_${matchId}`,
+              choUserId: choInfo.id,
+              hanUserId: hanInfo.id,
+              choInfo,
+              hanInfo,
+              createdAtMs: Date.now(),
+          });
+          pendingFriendlyInvites.delete(inviteId);
+
+          emitToUserSockets(invite.fromUserId, 'friendly_match_ready', {
+              matchId,
+              opponent: toInfo,
+          });
+          emitToUserSockets(invite.toUserId, 'friendly_match_ready', {
+              matchId,
+              opponent: fromInfo,
+          });
+          respond({ ok: true, matchId });
+      } catch (err) {
+          console.error(err);
+          respond({ ok: false, error: 'SERVER_ERROR' });
+      }
+  });
+
+  socket.on('join_friendly_match', async (data = {}, callback) => {
+      const respond = typeof callback === 'function' ? callback : () => {};
+      if (!socket._authUserId || !socket._sessionId) return respond({ ok: false, error: 'NOT_AUTHORIZED' });
+      if (!isSessionActive(socket._authUserId, socket._sessionId)) {
+          socket.emit('session_terminated', { reason: 'duplicate_login' });
+          socket.disconnect(true);
+          return respond({ ok: false, error: 'SESSION_EXPIRED' });
+      }
+
+      const matchId = typeof data.matchId === 'string' ? data.matchId : '';
+      cleanupExpiredFriendlyMatches();
+      const pendingMatch = pendingFriendlyMatches.get(matchId);
+      if (!pendingMatch) return respond({ ok: false, error: 'MATCH_NOT_FOUND' });
+
+      const currentUserId = Number(socket._authUserId);
+      const myTeam = pendingMatch.choUserId === currentUserId
+          ? TEAM_CHO
+          : pendingMatch.hanUserId === currentUserId
+              ? TEAM_HAN
+              : null;
+      if (!myTeam) return respond({ ok: false, error: 'NOT_ALLOWED' });
+
+      const roomId = pendingMatch.roomId;
+      let game = activeGames.get(roomId);
+      if (!game) {
+          game = buildRealtimeGameState({
+              roomId,
+              choUser: { id: pendingMatch.choUserId, socketId: null, userInfo: pendingMatch.choInfo },
+              hanUser: { id: pendingMatch.hanUserId, socketId: null, userInfo: pendingMatch.hanInfo },
+              mode: 'friendly',
+          });
+      }
+
+      if (myTeam === TEAM_CHO) {
+          game.cho.socketId = socket.id;
+          game.cho.userInfo = pendingMatch.choInfo;
+      } else {
+          game.han.socketId = socket.id;
+          game.han.userInfo = pendingMatch.hanInfo;
+      }
+      socket.join(roomId);
+
+      const opponentInfo = myTeam === TEAM_CHO ? pendingMatch.hanInfo : pendingMatch.choInfo;
+      socket.emit('match_found', {
+          room: roomId,
+          team: myTeam,
+          opponent: opponentInfo,
+          mode: 'friendly',
       });
 
-      console.log(`Match: [Cho] ${choPlayer.userInfo.nickname} vs [Han] ${hanPlayer.userInfo.nickname}`);
-
-      // Notify match found - Clients enters Setup Phase
-      choPlayer.socket.emit('match_found', { room: roomId, team: 'cho', opponent: hanPlayer.userInfo });
-      hanPlayer.socket.emit('match_found', { room: roomId, team: 'han', opponent: choPlayer.userInfo });
-    }
+      if (game.cho?.socketId && game.han?.socketId) {
+          pendingFriendlyMatches.delete(matchId);
+      }
+      respond({ ok: true, roomId, team: myTeam });
   });
 
   // Setup Sync
@@ -1301,6 +1925,12 @@ async function processGameEnd(roomId, winnerTeam, resultType = 'unknown') {
             `loser ${loserUser.rating} -> ${newLoserRating} (-${ratingChange})`,
         );
         activeGames.delete(roomId);
+        for (const [matchId, pendingMatch] of pendingFriendlyMatches.entries()) {
+            if (pendingMatch?.roomId === roomId) {
+                pendingFriendlyMatches.delete(matchId);
+                break;
+            }
+        }
     } catch (err) {
         await client.query('ROLLBACK');
         game.finished = false;
@@ -1408,7 +2038,16 @@ app.get('/api/games/:id', authenticateToken, async (req, res) => {
             LEFT JOIN users u1 ON g.winner_id = u1.id
             LEFT JOIN users u2 ON g.loser_id = u2.id
             WHERE g.id = $1
-              AND (g.winner_id = $2 OR g.loser_id = $2)
+              AND (
+                  g.winner_id = $2
+                  OR g.loser_id = $2
+                  OR EXISTS (
+                      SELECT 1
+                      FROM friendships f
+                      WHERE f.user_id = $2
+                        AND (f.friend_id = g.winner_id OR f.friend_id = g.loser_id)
+                  )
+              )
         `, [req.params.id, req.user.id]);
         
         if (result.rows.length === 0) return res.status(404).json({ error: 'Game not found' });
