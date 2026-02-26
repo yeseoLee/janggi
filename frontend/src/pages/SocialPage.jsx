@@ -12,6 +12,8 @@ function SocialPage() {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('friends');
   const [friends, setFriends] = useState([]);
+  const [incomingRequests, setIncomingRequests] = useState([]);
+  const [outgoingRequests, setOutgoingRequests] = useState([]);
   const [villains, setVillains] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState([]);
@@ -57,11 +59,22 @@ function SocialPage() {
     }
   }, [showToast, t]);
 
+  const loadFriendRequests = useCallback(async () => {
+    try {
+      const response = await axios.get('/api/social/friend-requests');
+      setIncomingRequests(response.data?.incoming || []);
+      setOutgoingRequests(response.data?.outgoing || []);
+    } catch {
+      showToast(t('social.loadFriendRequestsFailed'));
+    }
+  }, [showToast, t]);
+
   useEffect(() => {
     if (!user) return;
     loadFriends();
+    loadFriendRequests();
     loadVillains();
-  }, [loadFriends, loadVillains, user]);
+  }, [loadFriendRequests, loadFriends, loadVillains, user]);
 
   const handleSearchUsers = async () => {
     const q = searchQuery.trim();
@@ -82,12 +95,21 @@ function SocialPage() {
 
   const handleAddFriend = async (targetUserId) => {
     try {
-      await axios.post('/api/social/friends', { targetUserId });
-      showToast(t('social.friendAdded'));
-      await loadFriends();
+      const response = await axios.post('/api/social/friends', { targetUserId });
+      if (response.data?.status === 'already_friend') {
+        showToast(t('social.alreadyFriend'));
+      } else {
+        showToast(t('social.friendRequestSent'));
+      }
+      await Promise.all([loadFriends(), loadFriendRequests()]);
       await handleSearchUsers();
     } catch (err) {
       if (err.response?.status === 409) {
+        if (err.response?.data?.code === 'INCOMING_REQUEST_EXISTS') {
+          showToast(t('social.friendRequestIncomingExists'));
+          await loadFriendRequests();
+          return;
+        }
         showToast(t('social.cannotAddBlockedUser'));
         return;
       }
@@ -99,10 +121,32 @@ function SocialPage() {
     try {
       await axios.delete(`/api/social/friends/${friendId}`);
       showToast(t('social.friendRemoved'));
-      await loadFriends();
+      await Promise.all([loadFriends(), loadFriendRequests()]);
       await handleSearchUsers();
     } catch {
       showToast(t('social.friendRemoveFailed'));
+    }
+  };
+
+  const handleAcceptFriendRequest = async (requestId) => {
+    try {
+      await axios.post(`/api/social/friend-requests/${requestId}/accept`);
+      showToast(t('social.friendRequestAccepted'));
+      await Promise.all([loadFriends(), loadFriendRequests()]);
+      await handleSearchUsers();
+    } catch {
+      showToast(t('social.friendRequestAcceptFailed'));
+    }
+  };
+
+  const handleRejectFriendRequest = async (requestId) => {
+    try {
+      await axios.post(`/api/social/friend-requests/${requestId}/reject`);
+      showToast(t('social.friendRequestRejected'));
+      await loadFriendRequests();
+      await handleSearchUsers();
+    } catch {
+      showToast(t('social.friendRequestRejectFailed'));
     }
   };
 
@@ -110,7 +154,7 @@ function SocialPage() {
     try {
       await axios.post('/api/social/villains', { targetUserId });
       showToast(t('social.villainAdded'));
-      await Promise.all([loadFriends(), loadVillains(), handleSearchUsers()]);
+      await Promise.all([loadFriends(), loadFriendRequests(), loadVillains(), handleSearchUsers()]);
     } catch {
       showToast(t('social.villainAddFailed'));
     }
@@ -219,13 +263,19 @@ function SocialPage() {
                         <span>@{candidate.username}</span>
                       </div>
                       <div className="social-person-actions">
-                        {!candidate.is_friend && (
+                        {!candidate.is_friend && !candidate.has_outgoing_request && !candidate.has_incoming_request && (
                           <button type="button" className="social-btn primary" onClick={() => handleAddFriend(candidate.id)}>
                             {t('social.addFriend')}
                           </button>
                         )}
                         {candidate.is_friend && (
                           <span className="social-badge">{t('social.alreadyFriend')}</span>
+                        )}
+                        {!candidate.is_friend && candidate.has_outgoing_request && (
+                          <span className="social-badge">{t('social.friendRequestPending')}</span>
+                        )}
+                        {!candidate.is_friend && candidate.has_incoming_request && (
+                          <span className="social-badge">{t('social.friendRequestReceived')}</span>
                         )}
                         {!candidate.is_villain && (
                           <button type="button" className="social-btn danger" onClick={() => handleAddVillain(candidate.id)}>
@@ -241,7 +291,44 @@ function SocialPage() {
 
             <section className="social-list-card">
               <h3>{t('social.friendsList')}</h3>
-              {friends.length === 0 && (
+              {incomingRequests.length > 0 && (
+                <div className="social-requests-block">
+                  <div className="social-requests-title">{t('social.incomingRequestsTitle')}</div>
+                  {incomingRequests.map((request) => (
+                    <div className="social-person-row social-request-row" key={`incoming-${request.id}`}>
+                      <div className="social-person-main">
+                        <strong>{request.nickname}</strong>
+                        <span>{request.rank || '-'} · {request.rating ?? '-'}</span>
+                      </div>
+                      <div className="social-person-actions">
+                        <button type="button" className="social-btn primary" onClick={() => handleAcceptFriendRequest(request.id)}>
+                          {t('social.acceptFriendRequest')}
+                        </button>
+                        <button type="button" className="social-btn" onClick={() => handleRejectFriendRequest(request.id)}>
+                          {t('social.rejectFriendRequest')}
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {outgoingRequests.length > 0 && (
+                <div className="social-requests-block">
+                  <div className="social-requests-title">{t('social.outgoingRequestsTitle')}</div>
+                  {outgoingRequests.map((request) => (
+                    <div className="social-person-row social-request-row" key={`outgoing-${request.id}`}>
+                      <div className="social-person-main">
+                        <strong>{request.nickname}</strong>
+                        <span>{request.rank || '-'} · {request.rating ?? '-'}</span>
+                      </div>
+                      <div className="social-person-actions">
+                        <span className="social-badge">{t('social.friendRequestPending')}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {friends.length === 0 && incomingRequests.length === 0 && outgoingRequests.length === 0 && (
                 <div className="page-empty" style={{ padding: '18px 0' }}>
                   <span className="material-icons-round">group_off</span>
                   <span>{t('social.noFriends')}</span>
