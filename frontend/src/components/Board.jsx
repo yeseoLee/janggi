@@ -1401,19 +1401,15 @@ const Board = ({
     if (!projectedOnlineClocks || !team) return null;
     const teamClock = projectedOnlineClocks[team];
     if (!teamClock) return null;
-
-    if (teamClock.mainMs > 0) {
-      return {
-        text: formatClockText(teamClock.mainMs),
-        critical: teamClock.mainMs <= 30 * 1000,
-      };
-    }
-
+    const periods = Math.max(0, Number(teamClock.byoyomiPeriods) || 0);
+    const inByoyomi = teamClock.mainMs <= 0;
     const byoyomiRemainingMs = teamClock.byoyomiRemainingMs ?? BYOYOMI_TIME_MS;
-    const byoyomiSeconds = Math.max(0, Math.ceil(byoyomiRemainingMs / 1000));
+    const clockMs = inByoyomi ? byoyomiRemainingMs : teamClock.mainMs;
+    const clockText = formatClockText(clockMs);
+    const byoyomiSeconds = Math.max(0, Math.ceil(clockMs / 1000));
     return {
-      text: t('board.byoyomiClock', { seconds: byoyomiSeconds, periods: teamClock.byoyomiPeriods }),
-      critical: byoyomiSeconds <= 10 || teamClock.byoyomiPeriods <= 1,
+      text: t('board.clockWithByoyomi', { time: clockText, periods }),
+      critical: inByoyomi ? (byoyomiSeconds <= 10 || periods <= 1) : teamClock.mainMs <= 45 * 1000,
     };
   };
   const topClockLabel = getOnlineClockLabel(topTeam);
@@ -1659,7 +1655,7 @@ const Board = ({
         {/* Main game area */}
         <main className="game-main">
             {/* Top captured pieces bar */}
-            <div className="captured-bar">
+            <div className="captured-bar top">
                 {topCaptured.map((pieceType, idx) => (
                     <div key={`cap-top-${pieceType}-${idx}`} className="captured-bar-piece">
                         <Piece team={topTeam} type={pieceType} styleVariant={styleVariant} inverted={invertColor} />
@@ -1724,7 +1720,7 @@ const Board = ({
             </div>
 
             {/* Bottom captured pieces bar */}
-            <div className="captured-bar">
+            <div className="captured-bar bottom">
                 {bottomCaptured.map((pieceType, idx) => (
                     <div key={`cap-bot-${pieceType}-${idx}`} className="captured-bar-piece">
                         <Piece team={bottomTeam} type={pieceType} styleVariant={styleVariant} inverted={invertColor} />
