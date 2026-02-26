@@ -9,6 +9,11 @@ export const AuthProvider = ({ children }) => {
   const [token, setToken] = useState(localStorage.getItem('token'));
   const [forcedLogoutReason, setForcedLogoutReason] = useState(null);
   const authSocketRef = useRef(null);
+  const tokenRef = useRef(token);
+
+  useEffect(() => {
+    tokenRef.current = token;
+  }, [token]);
 
   const markDuplicateLogin = useCallback(() => {
     setForcedLogoutReason('duplicate_login');
@@ -20,18 +25,22 @@ export const AuthProvider = ({ children }) => {
       authSocketRef.current = null;
     }
     localStorage.removeItem('token');
+    delete axios.defaults.headers.common['Authorization'];
     setToken(null);
     setUser(null);
     setForcedLogoutReason(null);
   }, []);
 
   const refreshUser = useCallback(async () => {
-    if (!token) return null;
+    const activeToken = tokenRef.current;
+    if (!activeToken) return null;
     try {
       const res = await axios.get('/api/user/me');
+      if (tokenRef.current !== activeToken) return null;
       setUser(res.data);
       return res.data;
     } catch (err) {
+      if (tokenRef.current !== activeToken) return null;
       if (err.response?.status === 401 && err.response?.data?.code === 'DUPLICATE_LOGIN') {
         markDuplicateLogin();
         return null;
@@ -39,7 +48,7 @@ export const AuthProvider = ({ children }) => {
       logout();
       return null;
     }
-  }, [token, logout, markDuplicateLogin]);
+  }, [logout, markDuplicateLogin]);
 
   const acknowledgeForcedLogout = useCallback(() => {
     logout();
@@ -60,11 +69,19 @@ export const AuthProvider = ({ children }) => {
 
   // Configure axios default header
   useEffect(() => {
+    let isActive = true;
+    const controller = new AbortController();
+
     if (token) {
       axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
-      axios.get('/api/user/me')
-        .then(res => setUser(res.data))
+      axios.get('/api/user/me', { signal: controller.signal })
+        .then((res) => {
+          if (!isActive || tokenRef.current !== token) return;
+          setUser(res.data);
+        })
         .catch((err) => {
+          if (!isActive || tokenRef.current !== token) return;
+          if (err?.code === 'ERR_CANCELED') return;
           if (err.response?.status === 401 && err.response?.data?.code === 'DUPLICATE_LOGIN') {
             markDuplicateLogin();
             return;
@@ -75,15 +92,22 @@ export const AuthProvider = ({ children }) => {
       delete axios.defaults.headers.common['Authorization'];
       setUser(null);
     }
+
+    return () => {
+      isActive = false;
+      controller.abort();
+    };
   }, [token, logout, markDuplicateLogin]);
 
   useEffect(() => {
     if (!token) return undefined;
 
-    const sessionSocket = io('/', { autoConnect: false, auth: { token } });
+    const sessionToken = token;
+    const sessionSocket = io('/', { autoConnect: false, auth: { token: sessionToken } });
     authSocketRef.current = sessionSocket;
 
     const handleSessionTerminated = (payload = {}) => {
+      if (tokenRef.current !== sessionToken) return;
       if (payload.reason === 'duplicate_login') {
         markDuplicateLogin();
       }
@@ -102,7 +126,12 @@ export const AuthProvider = ({ children }) => {
   }, [token, markDuplicateLogin]);
 
   const login = (newToken, userInfo) => {
+    if (authSocketRef.current) {
+      authSocketRef.current.disconnect();
+      authSocketRef.current = null;
+    }
     localStorage.setItem('token', newToken);
+    axios.defaults.headers.common['Authorization'] = `Bearer ${newToken}`;
     setToken(newToken);
     setUser(userInfo);
     setForcedLogoutReason(null);
