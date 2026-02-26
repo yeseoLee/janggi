@@ -6,9 +6,10 @@ import { useLanguage } from '../context/LanguageContext';
 import BottomNav from '../components/BottomNav';
 import { normalizeResultMethod } from '../game/result';
 import { useFriendlyMatchSocket } from '../hooks/useFriendlyMatchSocket';
+import { useLobbyChatSocket } from '../hooks/useLobbyChatSocket';
 
 function MainMenu() {
-  const { user, refreshUser } = useAuth();
+  const { user, token, refreshUser } = useAuth();
   const navigate = useNavigate();
   const { t } = useLanguage();
   const [toastMessage, setToastMessage] = useState('');
@@ -18,7 +19,9 @@ function MainMenu() {
   const [showFriendlyPicker, setShowFriendlyPicker] = useState(false);
   const [friends, setFriends] = useState([]);
   const [loadingFriends, setLoadingFriends] = useState(false);
+  const [chatInput, setChatInput] = useState('');
   const toastTimerRef = useRef(null);
+  const chatMessagesRef = useRef(null);
   const {
     pendingInvite,
     matchReady,
@@ -28,6 +31,17 @@ function MainMenu() {
     clearPendingInvite,
     clearMatchReady,
   } = useFriendlyMatchSocket();
+  const {
+    messages: chatMessages,
+    onlineCount: chatOnlineCount,
+    isConnected: isChatConnected,
+    isRoomFull: isChatRoomFull,
+    sendMessage: sendChatMessage,
+  } = useLobbyChatSocket({
+    token,
+    userId: user?.id,
+    nickname: user?.nickname,
+  });
 
   useEffect(() => {
     return () => {
@@ -110,6 +124,28 @@ function MainMenu() {
   const closeFriendlyPicker = () => {
     setShowFriendlyPicker(false);
   };
+
+  const handleSendChat = async (event) => {
+    event.preventDefault();
+    const trimmed = chatInput.trim();
+    if (!trimmed) return;
+
+    const response = await sendChatMessage(trimmed);
+    if (!response?.ok) {
+      if (response?.error === 'NOT_CONNECTED') {
+        showToast(t('menu.liveChatDisconnected'));
+      }
+      return;
+    }
+
+    setChatInput('');
+  };
+
+  useEffect(() => {
+    if (isChatRoomFull) {
+      showToast(t('menu.liveChatFull'));
+    }
+  }, [isChatRoomFull, showToast, t]);
 
   const handleConfirmMatchRequest = async () => {
     if (matchRequestType === 'ai') {
@@ -244,6 +280,20 @@ function MainMenu() {
     return t('records.timeAgoDays', { count: Math.floor(hours / 24) });
   };
 
+  const formatChatTime = (dateStr) => {
+    if (!dateStr) return '';
+    return new Date(dateStr).toLocaleTimeString([], {
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  };
+
+  useEffect(() => {
+    const el = chatMessagesRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+  }, [chatMessages]);
+
   return (
     <>
       <header className="app-header">
@@ -357,6 +407,41 @@ function MainMenu() {
               );
             })}
           </div>
+        </section>
+
+        <section className="lobby-chat-card">
+          <div className="lobby-chat-header">
+            <h3>{t('menu.liveChatTitle')}</h3>
+            <span>{t('menu.liveChatOnline', { count: chatOnlineCount })}</span>
+          </div>
+          <div className="lobby-chat-body" ref={chatMessagesRef}>
+            {chatMessages.length === 0 && (
+              <div className="lobby-chat-empty">{t('menu.liveChatEmpty')}</div>
+            )}
+            {chatMessages.map((message) => {
+              const isMine = Number(message.userId) === Number(user?.id);
+              return (
+                <div key={message.id} className={`lobby-chat-row ${isMine ? 'mine' : 'other'}`}>
+                  {!isMine && <div className="lobby-chat-name">{message.nickname}</div>}
+                  <div className="lobby-chat-bubble">{message.text}</div>
+                  <div className="lobby-chat-time">{formatChatTime(message.createdAt)}</div>
+                </div>
+              );
+            })}
+          </div>
+          <form className="lobby-chat-input-row" onSubmit={handleSendChat}>
+            <input
+              type="text"
+              value={chatInput}
+              onChange={(e) => setChatInput(e.target.value)}
+              placeholder={isChatRoomFull ? t('menu.liveChatFull') : t('menu.liveChatPlaceholder')}
+              disabled={!isChatConnected || isChatRoomFull}
+              maxLength={300}
+            />
+            <button type="submit" disabled={!isChatConnected || isChatRoomFull || !chatInput.trim()}>
+              {t('menu.liveChatSend')}
+            </button>
+          </form>
         </section>
       </div>
 

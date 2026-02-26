@@ -839,6 +839,151 @@
   gap: 10px;
 }
 
+/* ===== Lobby Chat ===== */
+.lobby-chat-card {
+  background: var(--color-surface);
+  border-radius: 22px;
+  border: 1px solid var(--color-border-light);
+  box-shadow: var(--shadow-md);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.lobby-chat-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--color-border-light);
+  background: linear-gradient(180deg, #fff7ed 0%, #ffffff 70%);
+}
+
+.lobby-chat-header h3 {
+  margin: 0;
+  font-size: 0.96rem;
+  font-weight: 800;
+  color: var(--color-text);
+}
+
+.lobby-chat-header span {
+  font-size: 0.76rem;
+  color: #9a3412;
+  font-weight: 700;
+  background: #ffedd5;
+  padding: 5px 9px;
+  border-radius: 999px;
+}
+
+.lobby-chat-body {
+  height: 240px;
+  overflow-y: auto;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background:
+    radial-gradient(circle at 85% 8%, rgba(251, 191, 36, 0.08), transparent 38%),
+    radial-gradient(circle at 8% 95%, rgba(217, 119, 38, 0.07), transparent 34%),
+    #ffffff;
+}
+
+.lobby-chat-empty {
+  margin: auto;
+  font-size: 0.84rem;
+  color: var(--color-text-muted);
+}
+
+.lobby-chat-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-width: 86%;
+}
+
+.lobby-chat-row.mine {
+  margin-left: auto;
+  align-items: flex-end;
+}
+
+.lobby-chat-row.other {
+  margin-right: auto;
+  align-items: flex-start;
+}
+
+.lobby-chat-name {
+  font-size: 0.68rem;
+  color: var(--color-text-muted);
+  padding: 0 8px;
+}
+
+.lobby-chat-bubble {
+  border-radius: 18px;
+  padding: 10px 12px;
+  font-size: 0.86rem;
+  line-height: 1.35;
+  word-break: break-word;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+}
+
+.lobby-chat-row.other .lobby-chat-bubble {
+  background: #ffffff;
+  color: var(--color-text);
+  border: 1px solid #e5e7eb;
+}
+
+.lobby-chat-row.mine .lobby-chat-bubble {
+  background: linear-gradient(135deg, #f59e0b, #d97706);
+  color: #fff;
+}
+
+.lobby-chat-time {
+  font-size: 0.64rem;
+  color: #9ca3af;
+  padding: 0 8px;
+}
+
+.lobby-chat-input-row {
+  border-top: 1px solid var(--color-border-light);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  background: #ffffff;
+}
+
+.lobby-chat-input-row input {
+  flex: 1;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  padding: 10px 13px;
+  font-size: 0.86rem;
+  color: var(--color-text);
+  background: #fff;
+}
+
+.lobby-chat-input-row input:focus {
+  outline: none;
+  border-color: #f59e0b;
+  box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.18);
+}
+
+.lobby-chat-input-row button {
+  border: none;
+  border-radius: 999px;
+  padding: 9px 13px;
+  background: linear-gradient(135deg, #d97726, #b45309);
+  color: #fff;
+  font-size: 0.8rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.lobby-chat-input-row button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 /* ===== Records Page ===== */
 .records-page {
   display: flex;
