@@ -11,9 +11,7 @@ const resolveKey = (obj, key) =>
 const detectInitialLanguage = () => {
   const saved = localStorage.getItem(STORAGE_KEY);
   if (SUPPORTED.includes(saved)) return saved;
-
-  const browser = navigator.language?.toLowerCase() || 'en';
-  return browser.startsWith('ko') ? 'ko' : 'en';
+  return 'ko';
 };
 
 export const LanguageProvider = ({ children }) => {
