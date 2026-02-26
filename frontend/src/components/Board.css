@@ -1093,7 +1093,7 @@
   border-radius: 24px 24px 0 0;
   box-shadow: 0 -5px 20px rgba(0,0,0,0.1);
   padding: 12px 22px calc(26px + env(safe-area-inset-bottom, 0px));
-  min-height: clamp(260px, 42dvh, 420px);
+  min-height: clamp(230px, 32dvh, 320px);
   z-index: 30;
   margin-top: 0;
   position: relative;
@@ -1116,7 +1116,7 @@
   grid-template-columns: 1fr auto 1fr;
   gap: 18px;
   align-items: center;
-  margin-bottom: 24px;
+  margin-bottom: 14px;
 }
 
 .game-player-info {
@@ -1281,7 +1281,7 @@
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 14px;
-  margin-top: auto;
+  margin-top: 8px;
 }
 
 .game-action-btn {
@@ -1520,7 +1520,7 @@
 @media (max-width: 640px) {
   .game-bottom-panel {
     padding: 10px 14px calc(20px + env(safe-area-inset-bottom, 0px));
-    min-height: clamp(230px, 40dvh, 340px);
+    min-height: clamp(220px, 30dvh, 300px);
   }
 
   .captured-bar {
@@ -1541,7 +1541,7 @@
 
   .game-player-row {
     gap: 10px;
-    margin-bottom: 16px;
+    margin-bottom: 10px;
   }
 
   .game-player-avatar {
