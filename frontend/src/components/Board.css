@@ -466,9 +466,9 @@
   width: min(92vw, 380px);
   border-radius: 20px;
   padding: 24px 20px 18px;
-  background: rgba(18, 23, 38, 0.96);
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.42);
+  background: var(--color-surface, #fff);
+  border: 1px solid rgba(15, 23, 42, 0.1);
+  box-shadow: 0 20px 50px rgba(15, 23, 42, 0.24);
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -476,7 +476,7 @@
 
 .game-confirm-title {
   margin: 0;
-  color: #f8fafc;
+  color: var(--color-text, #1f2937);
   font-size: 1.15rem;
   font-weight: 800;
   text-align: center;
@@ -498,16 +498,16 @@
 }
 
 .game-confirm-btn.secondary {
-  background: rgba(255, 255, 255, 0.12);
-  color: #f8fafc;
+  background: #e5e7eb;
+  color: #374151;
 }
 
 .game-confirm-btn.secondary:hover {
-  background: rgba(255, 255, 255, 0.2);
+  background: #d1d5db;
 }
 
 .game-confirm-btn.primary {
-  background: linear-gradient(135deg, #ef4444, #dc2626);
+  background: linear-gradient(135deg, #d97726, #b45309);
   color: #fff;
 }
 
@@ -529,9 +529,9 @@
   width: min(88vw, 500px);
   border-radius: 24px;
   padding: 28px 24px 24px;
-  background: rgba(24, 26, 32, 0.88);
-  border: 1.5px solid rgba(255, 255, 255, 0.25);
-  box-shadow: 0 24px 56px rgba(0, 0, 0, 0.55);
+  background: var(--color-surface, #fff);
+  border: 1px solid rgba(15, 23, 42, 0.1);
+  box-shadow: 0 24px 56px rgba(15, 23, 42, 0.3);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -540,7 +540,7 @@
 
 .game-result-title {
   font-size: 2.2rem;
-  color: #f8fafc;
+  color: var(--color-text, #1f2937);
   font-weight: 900;
   margin: 0;
   line-height: 1.1;
@@ -553,7 +553,7 @@
   font-weight: 900;
   line-height: 1.1;
   text-align: center;
-  text-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+  text-shadow: none;
 }
 
 .game-result-winner.cho {
@@ -576,23 +576,23 @@
   padding: 14px 18px;
   border-radius: 18px;
   border: none;
-  background: rgba(255, 255, 255, 0.22);
-  color: white;
-  font-size: 1.8rem;
-  font-weight: 900;
+  background: linear-gradient(135deg, #d97726, #b45309);
+  color: #fff;
+  font-size: 1.2rem;
+  font-weight: 800;
   cursor: pointer;
   transition: all 0.2s ease;
-  backdrop-filter: blur(1.5px);
 }
 
 .winner-btn:hover {
   transform: translateY(-1px);
-  background: rgba(255, 255, 255, 0.3);
+  filter: brightness(1.05);
 }
 
 .winner-btn.secondary {
-  background: rgba(255,255,255,0.16);
-  border: 1px solid rgba(255,255,255,0.35);
+  background: #fff;
+  color: #9a3412;
+  border: 1.5px solid #d97726;
 }
 
 /* Check notification popup */
@@ -1188,17 +1188,17 @@
 }
 
 .game-action-btn.dark {
-  background: #1F2937;
+  background: linear-gradient(135deg, #d97726, #b45309);
   color: #fff;
-  border: 1px solid #374151;
+  border: 1px solid #b45309;
 }
 
 .game-action-btn.dark:hover:not(:disabled) {
-  background: #374151;
+  filter: brightness(1.05);
 }
 
 .game-action-btn.dark .material-icons-round {
-  color: #FCD34D;
+  color: #fde68a;
 }
 
 /* ===== Spinner ===== */
