@@ -4,6 +4,7 @@ import axios from 'axios';
 import { useLanguage } from '../context/LanguageContext';
 import { useAuth } from '../context/AuthContext';
 import BottomNav from '../components/BottomNav';
+import { normalizeResultMethod } from '../game/result';
 
 function ReplayList() {
   const [games, setGames] = useState([]);
@@ -49,10 +50,13 @@ function ReplayList() {
     return t('records.friendlyMatch');
   };
 
-  const getResultType = (game) => {
-    const key = `replay.result.${game.result_type || 'unknown'}`;
-    const translated = t(key);
-    return translated === key ? null : translated;
+  const getResultType = (game, result) => {
+    if (!result || result.type === 'draw') return null;
+    const method = normalizeResultMethod(game.result_type);
+    const methodLabel = t(`replay.result.${method}`);
+    return result.type === 'win'
+      ? t('replay.resultWin', { method: methodLabel })
+      : t('replay.resultLoss', { method: methodLabel });
   };
 
   const totalGames = games.length;
@@ -96,7 +100,7 @@ function ReplayList() {
             const myTeam = getMyTeam(game);
             const opponent = getOpponentName(game);
             const gameType = getGameType(game);
-            const specialResult = getResultType(game);
+            const specialResult = getResultType(game, result);
             const dateStr = game.played_at ? new Date(game.played_at).toLocaleDateString() : '';
 
             return (

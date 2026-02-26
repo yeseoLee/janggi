@@ -556,12 +556,12 @@
   text-shadow: none;
 }
 
-.game-result-winner.cho {
-  color: #2f67f0;
+.game-result-winner.win {
+  color: #d97726;
 }
 
-.game-result-winner.han {
-  color: #ef4444;
+.game-result-winner.loss {
+  color: #374151;
 }
 
 .game-result-actions {

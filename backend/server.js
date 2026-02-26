@@ -618,8 +618,8 @@ io.on('connection', (socket) => {
         }
 
         const winnerTeam = getOpponentTeam(disconnectedTeam);
-        io.to(roomId).emit('game_over', { winner: winnerTeam, type: 'disconnect' });
-        processGameEnd(roomId, winnerTeam, 'disconnect');
+        io.to(roomId).emit('game_over', { winner: winnerTeam, type: 'time' });
+        processGameEnd(roomId, winnerTeam, 'time');
         break;
     }
   });

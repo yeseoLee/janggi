@@ -6,6 +6,7 @@ import { useAuth } from '../context/AuthContext';
 import { useLanguage } from '../context/LanguageContext';
 import Piece from './Piece';
 import { TEAM, PIECE_TYPE, SETUP_TYPES, generateBoard } from '../game/constants';
+import { RESULT_METHOD, normalizeResultMethod } from '../game/result';
 import { getValidMoves, getSafeMoves, isCheck, isCheckmate, calculateScore } from '../game/rules';
 import './Board.css';
 
@@ -82,6 +83,7 @@ const Board = ({
   // States
   const [history, setHistory] = useState([]);
   const [winner, setWinner] = useState(null);
+  const [gameResultMethod, setGameResultMethod] = useState(null);
   const [checkAlert, setCheckAlert] = useState(null);
   const [checkAlertVisible, setCheckAlertVisible] = useState(false);
   const [scores, setScores] = useState({ cho: 72, han: 73.5 });
@@ -129,6 +131,7 @@ const Board = ({
     setSetupTimeLeft(SETUP_SELECTION_TIMEOUT_SECONDS);
     setShowMatchStartModal(false);
     setPendingSetupState(null);
+    setGameResultMethod(null);
   }, []);
 
   const cancelOnlineMatch = useCallback((reason = 'user_cancel') => {
@@ -157,6 +160,7 @@ const Board = ({
       setValidMoves([]);
       setHistory([]);
       setWinner(null);
+      setGameResultMethod(null);
       setCheckAlert(null);
       setScores(calculateScore(firstFrame.board));
       setAiThinking(false);
@@ -169,6 +173,7 @@ const Board = ({
       setValidMoves([]);
       setHistory([]);
       setWinner(null);
+      setGameResultMethod(null);
       setCheckAlert(null);
       setScores({ cho: 72, han: 73.5 });
       setAiThinking(false);
@@ -249,6 +254,7 @@ const Board = ({
 
         socket.on('game_over', (data) => {
              setWinner(data.winner);
+             setGameResultMethod(normalizeResultMethod(data.type));
              if (data.type === 'resign') {
                const myTeamCurrent = myTeamRef.current;
                const opponentResigned =
@@ -261,8 +267,9 @@ const Board = ({
                return;
              }
 
-             const messageKey = data.type === 'disconnect'
-               ? 'board.alerts.disconnect'
+             const normalizedMethod = normalizeResultMethod(data.type);
+             const messageKey = normalizedMethod === RESULT_METHOD.TIME
+               ? 'board.alerts.time'
                : 'board.alerts.checkmate';
              showToast(tRef.current(messageKey));
         });
@@ -305,6 +312,7 @@ const Board = ({
         setTurn(TEAM.CHO);
         setHistory([]);
         setWinner(null);
+        setGameResultMethod(null);
         setSelectedPos(null);
         setValidMoves([]);
         setScores({ cho: 72, han: 73.5 });
@@ -314,6 +322,7 @@ const Board = ({
         setShowMatchCancelledModal(false);
         setShowMatchStartModal(false);
         setPendingSetupState(null);
+        setGameResultMethod(null);
         setGameState('SELECT_SIDE');
         setViewTeam?.(TEAM.CHO);
     } else {
@@ -321,6 +330,7 @@ const Board = ({
         setShowMatchCancelledModal(false);
         setShowMatchStartModal(false);
         setPendingSetupState(null);
+        setGameResultMethod(null);
         setGameState('SETUP_HAN');
         setMyTeam(null);
     }
@@ -426,6 +436,7 @@ const Board = ({
       setTurn(TEAM.CHO);
       setHistory([]);
       setWinner(null);
+      setGameResultMethod(null);
       setSelectedPos(null);
       setValidMoves([]);
       setCheckAlert(null);
@@ -487,6 +498,7 @@ const Board = ({
 
         if (isCheck(board, aiEngineTeam)) {
           setWinner(myTeam);
+          setGameResultMethod(RESULT_METHOD.CHECKMATE);
         }
       } finally {
         aiThinkingRef.current = false;
@@ -517,6 +529,7 @@ const Board = ({
         if (isCheckmate(board, turn)) {
             const winnerTeam = turn === TEAM.CHO ? TEAM.HAN : TEAM.CHO;
             setWinner(winnerTeam);
+            setGameResultMethod(RESULT_METHOD.CHECKMATE);
             
             if (gameMode === 'online' && myTeam && turn === myTeam) {
                  socket.emit('checkmate', { room, winner: winnerTeam, history });
@@ -590,6 +603,7 @@ const Board = ({
           setTurn(TEAM.CHO);
           setHistory([]);
           setWinner(null);
+          setGameResultMethod(null);
           setSelectedPos(null);
           setValidMoves([]);
           setCheckAlert(null);
@@ -615,6 +629,7 @@ const Board = ({
       setTurn(targetState.turn);
       setHistory(history.slice(0, -stepsToUndo));
       setWinner(null);
+      setGameResultMethod(null);
       setSelectedPos(null);
       setValidMoves([]);
       setCheckAlert(null);
@@ -658,6 +673,7 @@ const Board = ({
       if (gameMode === 'online') {
           socket.emit('resign', { room, team: myTeam, history });
       } else {
+          setGameResultMethod(RESULT_METHOD.RESIGN);
           setWinner(turn === TEAM.CHO ? TEAM.HAN : TEAM.CHO);
       }
   };
@@ -829,6 +845,13 @@ const Board = ({
   const opponentRating = Number.isFinite(Number(opponentInfo?.rating)) ? Math.floor(Number(opponentInfo.rating)) : '-';
   const myRecordSummary = `${myWins}${t('records.winShort')} ${myLosses}${t('records.lossShort')}`;
   const opponentRecordSummary = `${opponentWins}${t('records.winShort')} ${opponentLosses}${t('records.lossShort')}`;
+  const perspectiveTeam = myTeam || bottomTeam;
+  const didIWin = winner ? winner === perspectiveTeam : false;
+  const effectiveResultMethod = gameResultMethod || RESULT_METHOD.CHECKMATE;
+  const resultMethodLabel = t(`board.resultMethod.${effectiveResultMethod}`);
+  const resultSummaryText = didIWin
+    ? t('board.resultWin', { method: resultMethodLabel })
+    : t('board.resultLoss', { method: resultMethodLabel });
 
   return (
     <div className="game-screen" onDragStart={preventDrag}>
@@ -1282,8 +1305,8 @@ const Board = ({
             <div className="game-modal-overlay game-result-overlay">
                 <div className="game-result-modal">
                     <div className="game-result-title">{t('board.gameOver')}</div>
-                    <div className={`game-result-winner ${winner}`}>
-                        {t('board.wins', { team: t(`board.team.${winner}`) })}
+                    <div className={`game-result-winner ${didIWin ? 'win' : 'loss'}`}>
+                        {resultSummaryText}
                     </div>
                     <div className="game-result-actions">
                         {gameMode !== 'online' && gameMode !== 'replay' && (
