@@ -816,6 +816,11 @@ const Board = ({
     gameMode === 'online' && (gameState === 'SETUP_HAN' || gameState === 'SETUP_CHO');
   const isOnlineSetupWaiting =
     gameMode === 'online' && (gameState === 'WAITING_HAN' || gameState === 'WAITING_CHO');
+  const waitingSetupMessage = gameState === 'WAITING_HAN'
+    ? t('board.waitingHan')
+    : gameState === 'WAITING_CHO'
+      ? t('board.waitingCho')
+      : t('board.waitingSetupSelection');
   const myWins = Number.isFinite(Number(user?.wins)) ? Math.max(0, Math.floor(Number(user.wins))) : 0;
   const myLosses = Number.isFinite(Number(user?.losses)) ? Math.max(0, Math.floor(Number(user.losses))) : 0;
   const myRating = Number.isFinite(Number(user?.rating)) ? Math.floor(Number(user.rating)) : '-';
@@ -957,7 +962,7 @@ const Board = ({
                             <>
                                 {isOnlineSetupWaiting && (
                                     <>
-                                        <p className="setup-fs-subtitle">{t('board.waitingSetupSelection')}</p>
+                                        <p className="setup-fs-subtitle">{waitingSetupMessage}</p>
                                         <div className="spinner setup-fs-waiting-spinner" />
                                     </>
                                 )}
