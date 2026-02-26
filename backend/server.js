@@ -834,6 +834,7 @@ const TEAM_HAN = 'han';
 const MAIN_THINKING_TIME_MS = 5 * 60 * 1000;
 const BYOYOMI_TIME_MS = 30 * 1000;
 const BYOYOMI_PERIODS = 3;
+const SETUP_SELECTION_TIMEOUT_MS = 20 * 1000;
 
 async function fetchMaxWinStreak(userId) {
     const result = await pool.query(
@@ -1126,6 +1127,53 @@ function clearTurnTimeout(game) {
     game.turnTimeoutId = null;
 }
 
+function clearSetupTimeout(game) {
+    if (!game?.setupTimeoutId) return;
+    clearTimeout(game.setupTimeoutId);
+    game.setupTimeoutId = null;
+}
+
+function getExpectedSetupTeam(game) {
+    if (!game) return null;
+    if (!game.hanSetup) return TEAM_HAN;
+    if (!game.choSetup) return TEAM_CHO;
+    return null;
+}
+
+function buildSetupTimerSyncPayload(game, durationMs = SETUP_SELECTION_TIMEOUT_MS) {
+    if (!game?.setupPhaseTeam || !game?.setupPhaseStartedAt || !game?.setupPhaseDeadlineAt) return null;
+    return {
+        team: game.setupPhaseTeam,
+        startedAt: game.setupPhaseStartedAt,
+        deadlineAt: game.setupPhaseDeadlineAt,
+        durationMs,
+    };
+}
+
+function startSetupPhase(roomId, team, durationMs = SETUP_SELECTION_TIMEOUT_MS) {
+    const game = activeGames.get(roomId);
+    if (!game || game.finished || hasGameStarted(game)) return false;
+    if (!isValidTeam(team)) return false;
+
+    clearSetupTimeout(game);
+    const nowMs = Date.now();
+    game.setupPhaseTeam = team;
+    game.setupPhaseStartedAt = nowMs;
+    game.setupPhaseDeadlineAt = nowMs + durationMs;
+
+    game.setupTimeoutId = setTimeout(() => {
+        const currentGame = activeGames.get(roomId);
+        if (!currentGame || currentGame.finished || hasGameStarted(currentGame)) return;
+
+        const expectedTeam = getExpectedSetupTeam(currentGame);
+        if (!expectedTeam || expectedTeam !== team) return;
+        cancelPreGameMatch(roomId, 'setup_timeout');
+    }, durationMs);
+
+    io.to(roomId).emit('setup_timer_sync', buildSetupTimerSyncPayload(game, durationMs));
+    return true;
+}
+
 function scheduleTurnTimeout(roomId) {
     const game = activeGames.get(roomId);
     if (!game || game.finished || !hasGameStarted(game) || !isValidTeam(game.nextTurn) || !game.turnStartedAt) return;
@@ -1190,6 +1238,7 @@ function cancelPreGameMatch(roomId, reason = 'cancelled', cancelledBy = null) {
     }
 
     clearTurnTimeout(game);
+    clearSetupTimeout(game);
     activeGames.delete(roomId);
     for (const [matchId, pendingMatch] of pendingFriendlyMatches.entries()) {
         if (pendingMatch?.roomId === roomId) {
@@ -1287,6 +1336,10 @@ function buildRealtimeGameState({ roomId, choUser, hanUser, mode }) {
         turnStartedAt: null,
         turnByoyomiRemainingMs: null,
         turnTimeoutId: null,
+        setupPhaseTeam: null,
+        setupPhaseStartedAt: null,
+        setupPhaseDeadlineAt: null,
+        setupTimeoutId: null,
         startTime: null,
         finished: false,
     };
@@ -1347,10 +1400,12 @@ function createOnlineMatch(choPlayer, hanPlayer) {
         hanUser: { id: hanPlayer.userInfo.id, socketId: hanPlayer.socket.id, userInfo: hanPlayer.userInfo },
         mode: 'online',
     });
+    const game = activeGames.get(roomId);
+    const setupTimer = buildSetupTimerSyncPayload(game);
 
     console.log(`Match: [Cho] ${choPlayer.userInfo.nickname} vs [Han] ${hanPlayer.userInfo.nickname}`);
-    choPlayer.socket.emit('match_found', { room: roomId, team: TEAM_CHO, opponent: hanPlayer.userInfo });
-    hanPlayer.socket.emit('match_found', { room: roomId, team: TEAM_HAN, opponent: choPlayer.userInfo });
+    choPlayer.socket.emit('match_found', { room: roomId, team: TEAM_CHO, opponent: hanPlayer.userInfo, mode: 'online', setupTimer });
+    hanPlayer.socket.emit('match_found', { room: roomId, team: TEAM_HAN, opponent: choPlayer.userInfo, mode: 'online', setupTimer });
 }
 
 async function tryMatchQueue() {
@@ -1604,11 +1659,13 @@ io.on('connection', (socket) => {
       socket.join(roomId);
 
       const opponentInfo = myTeam === TEAM_CHO ? pendingMatch.hanInfo : pendingMatch.choInfo;
+      const setupTimer = buildSetupTimerSyncPayload(game);
       socket.emit('match_found', {
           room: roomId,
           team: myTeam,
           opponent: opponentInfo,
           mode: 'friendly',
+          setupTimer,
       });
 
       if (game.cho?.socketId && game.han?.socketId) {
@@ -1617,23 +1674,63 @@ io.on('connection', (socket) => {
       respond({ ok: true, roomId, team: myTeam });
   });
 
+  socket.on('setup_phase_started', (data = {}) => {
+      const roomId = typeof data.room === 'string' ? data.room : '';
+      const team = data.team === TEAM_HAN ? TEAM_HAN : (data.team === TEAM_CHO ? TEAM_CHO : null);
+      if (!roomId || !team) return;
+
+      const game = activeGames.get(roomId);
+      if (!game || game.finished || hasGameStarted(game)) return;
+
+      const actorTeam = getTeamBySocketId(game, socket.id);
+      if (!actorTeam || actorTeam !== team) return;
+
+      const expectedTeam = getExpectedSetupTeam(game);
+      if (!expectedTeam || expectedTeam !== team) return;
+
+      if (game.setupPhaseTeam === team && game.setupPhaseDeadlineAt && game.setupPhaseDeadlineAt > Date.now()) {
+          socket.emit('setup_timer_sync', buildSetupTimerSyncPayload(game));
+          return;
+      }
+
+      startSetupPhase(roomId, team);
+  });
+
   // Setup Sync
   socket.on('submit_setup', (data) => {
       // data: { room, team, setupType }
       const game = activeGames.get(data.room);
-      if (game && isValidTeam(data.team)) {
-          if (data.team === TEAM_CHO) game.choSetup = data.setupType;
-          if (data.team === TEAM_HAN) game.hanSetup = data.setupType;
+      if (!game || !isValidTeam(data.team)) return;
 
-          if (hasGameStarted(game) && !game.turnStartedAt) {
-              game.startTime = new Date();
-              beginNextTurn(game, TEAM_CHO, Date.now());
-              emitClockSync(data.room);
-              scheduleTurnTimeout(data.room);
-          }
+      const actorTeam = getTeamBySocketId(game, socket.id);
+      if (!actorTeam || actorTeam !== data.team) return;
+
+      const expectedTeam = getExpectedSetupTeam(game);
+      if (!expectedTeam || expectedTeam !== data.team) return;
+
+      if (data.team === TEAM_CHO) game.choSetup = data.setupType;
+      if (data.team === TEAM_HAN) game.hanSetup = data.setupType;
+
+      // Relay chosen setup to everyone in room.
+      io.to(data.room).emit('opponent_setup', { team: data.team, setupType: data.setupType });
+
+      if (hasGameStarted(game) && !game.turnStartedAt) {
+          clearSetupTimeout(game);
+          game.setupPhaseTeam = null;
+          game.setupPhaseStartedAt = null;
+          game.setupPhaseDeadlineAt = null;
+
+          game.startTime = new Date();
+          beginNextTurn(game, TEAM_CHO, Date.now());
+          emitClockSync(data.room);
+          scheduleTurnTimeout(data.room);
+          return;
       }
-      // Relay to opponent
-      socket.to(data.room).emit('opponent_setup', { team: data.team, setupType: data.setupType });
+
+      const nextTeam = getExpectedSetupTeam(game);
+      if (nextTeam) {
+          startSetupPhase(data.room, nextTeam);
+      }
   });
 
   socket.on('cancel_match', (data = {}) => {
@@ -1792,6 +1889,7 @@ async function processGameEnd(roomId, winnerTeam, resultType = 'unknown') {
     if (!game || game.finished || !isValidTeam(winnerTeam)) return;
     game.finished = true;
     clearTurnTimeout(game);
+    clearSetupTimeout(game);
 
     const winnerId = winnerTeam === TEAM_CHO ? game.cho.id : game.han.id;
     const loserId = winnerTeam === TEAM_CHO ? game.han.id : game.cho.id;
