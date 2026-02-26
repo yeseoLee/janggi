@@ -475,6 +475,9 @@ function getWinRate(user) {
 
 const TEAM_CHO = 'cho';
 const TEAM_HAN = 'han';
+const MAIN_THINKING_TIME_MS = 5 * 60 * 1000;
+const BYOYOMI_TIME_MS = 30 * 1000;
+const BYOYOMI_PERIODS = 3;
 
 async function fetchMaxWinStreak(userId) {
     const result = await pool.query(
@@ -510,7 +513,7 @@ function isValidPosition(pos) {
 
 function normalizeResultType(resultType) {
     const value = typeof resultType === 'string' ? resultType.trim().toLowerCase() : '';
-    if (value === 'resign' || value === 'time' || value === 'piece' || value === 'checkmate') {
+    if (value === 'resign' || value === 'time' || value === 'piece' || value === 'checkmate' || value === 'score') {
         return value;
     }
     return 'unknown';
@@ -586,6 +589,224 @@ function hasGameStarted(game) {
     return Boolean(game?.choSetup && game?.hanSetup);
 }
 
+function createInitialTeamClock() {
+    return {
+        mainMs: MAIN_THINKING_TIME_MS,
+        byoyomiPeriods: BYOYOMI_PERIODS,
+    };
+}
+
+function getNormalizedClock(clock) {
+    return {
+        mainMs: Math.max(0, Math.floor(Number(clock?.mainMs) || 0)),
+        byoyomiPeriods: Math.max(0, Math.floor(Number(clock?.byoyomiPeriods) || 0)),
+    };
+}
+
+function getInitialByoyomiForTurn(game) {
+    const activeTeam = game?.nextTurn;
+    if (!isValidTeam(activeTeam)) return null;
+    const activeClock = getNormalizedClock(game?.clocks?.[activeTeam]);
+    if (activeClock.mainMs > 0) return null;
+    if (activeClock.byoyomiPeriods <= 0) return 0;
+    return BYOYOMI_TIME_MS;
+}
+
+function getTurnLossBudgetMs(clock, turnByoyomiRemainingMs) {
+    const normalizedClock = getNormalizedClock(clock);
+    if (normalizedClock.mainMs > 0) {
+        return normalizedClock.mainMs + (normalizedClock.byoyomiPeriods * BYOYOMI_TIME_MS);
+    }
+    if (normalizedClock.byoyomiPeriods <= 0) return 0;
+
+    const firstByoyomiMsRaw = Number.isFinite(Number(turnByoyomiRemainingMs))
+        ? Number(turnByoyomiRemainingMs)
+        : BYOYOMI_TIME_MS;
+    const firstByoyomiMs = Math.max(0, Math.min(BYOYOMI_TIME_MS, Math.floor(firstByoyomiMsRaw)));
+    return firstByoyomiMs + ((normalizedClock.byoyomiPeriods - 1) * BYOYOMI_TIME_MS);
+}
+
+function projectClockAfterElapsed(clock, turnByoyomiRemainingMs, elapsedMs) {
+    const normalizedClock = getNormalizedClock(clock);
+    const safeElapsed = Math.max(0, Math.floor(Number(elapsedMs) || 0));
+    const turnBudgetMs = getTurnLossBudgetMs(normalizedClock, turnByoyomiRemainingMs);
+
+    if (turnBudgetMs <= 0 || safeElapsed >= turnBudgetMs) {
+        return {
+            mainMs: 0,
+            byoyomiPeriods: 0,
+            byoyomiRemainingMs: 0,
+            timedOut: true,
+        };
+    }
+
+    let remainingElapsed = safeElapsed;
+    let mainMs = normalizedClock.mainMs;
+    let byoyomiPeriods = normalizedClock.byoyomiPeriods;
+    let byoyomiRemainingMs = null;
+
+    if (mainMs > 0) {
+        if (remainingElapsed < mainMs) {
+            mainMs -= remainingElapsed;
+            remainingElapsed = 0;
+        } else {
+            remainingElapsed -= mainMs;
+            mainMs = 0;
+        }
+    }
+
+    if (mainMs <= 0 && byoyomiPeriods > 0) {
+        const initialByoyomiMsRaw = Number.isFinite(Number(turnByoyomiRemainingMs))
+            ? Number(turnByoyomiRemainingMs)
+            : BYOYOMI_TIME_MS;
+        byoyomiRemainingMs = Math.max(0, Math.min(BYOYOMI_TIME_MS, Math.floor(initialByoyomiMsRaw)));
+
+        while (remainingElapsed > 0 && byoyomiPeriods > 0) {
+            if (remainingElapsed < byoyomiRemainingMs) {
+                byoyomiRemainingMs -= remainingElapsed;
+                remainingElapsed = 0;
+                break;
+            }
+
+            remainingElapsed -= byoyomiRemainingMs;
+            byoyomiPeriods -= 1;
+            byoyomiRemainingMs = byoyomiPeriods > 0 ? BYOYOMI_TIME_MS : 0;
+        }
+    } else if (mainMs <= 0 && byoyomiPeriods <= 0) {
+        byoyomiRemainingMs = 0;
+    }
+
+    return {
+        mainMs,
+        byoyomiPeriods,
+        byoyomiRemainingMs: mainMs > 0 ? null : byoyomiRemainingMs,
+        timedOut: false,
+    };
+}
+
+function applyElapsedToActiveTurn(game, nowMs = Date.now()) {
+    if (!game?.turnStartedAt || !isValidTeam(game.nextTurn)) return null;
+
+    const activeTeam = game.nextTurn;
+    const activeClock = getNormalizedClock(game.clocks?.[activeTeam]);
+    const elapsedMs = Math.max(0, nowMs - game.turnStartedAt);
+    const projected = projectClockAfterElapsed(activeClock, game.turnByoyomiRemainingMs, elapsedMs);
+
+    game.clocks[activeTeam] = {
+        mainMs: projected.mainMs,
+        byoyomiPeriods: projected.byoyomiPeriods,
+    };
+    game.turnByoyomiRemainingMs = projected.byoyomiRemainingMs;
+    game.turnStartedAt = nowMs;
+
+    if (projected.timedOut) {
+        return activeTeam;
+    }
+    return null;
+}
+
+function buildClockSyncPayload(game, nowMs = Date.now()) {
+    const fallbackClock = createInitialTeamClock();
+    const projected = {
+        cho: {
+            ...getNormalizedClock(game?.clocks?.[TEAM_CHO] || fallbackClock),
+            byoyomiRemainingMs: null,
+            isByoyomi: false,
+        },
+        han: {
+            ...getNormalizedClock(game?.clocks?.[TEAM_HAN] || fallbackClock),
+            byoyomiRemainingMs: null,
+            isByoyomi: false,
+        },
+    };
+
+    for (const team of [TEAM_CHO, TEAM_HAN]) {
+        const teamClock = projected[team];
+        if (teamClock.mainMs <= 0) {
+            teamClock.isByoyomi = true;
+            teamClock.byoyomiRemainingMs = teamClock.byoyomiPeriods > 0 ? BYOYOMI_TIME_MS : 0;
+        }
+    }
+
+    if (game?.turnStartedAt && isValidTeam(game?.nextTurn)) {
+        const elapsedMs = Math.max(0, nowMs - game.turnStartedAt);
+        const activeProjection = projectClockAfterElapsed(
+            projected[game.nextTurn],
+            game.turnByoyomiRemainingMs,
+            elapsedMs,
+        );
+        projected[game.nextTurn] = {
+            mainMs: activeProjection.mainMs,
+            byoyomiPeriods: activeProjection.byoyomiPeriods,
+            byoyomiRemainingMs: activeProjection.mainMs > 0 ? null : activeProjection.byoyomiRemainingMs,
+            isByoyomi: activeProjection.mainMs <= 0,
+        };
+    }
+
+    return {
+        nextTurn: game?.nextTurn || TEAM_CHO,
+        updatedAt: nowMs,
+        timeControl: {
+            mainMs: MAIN_THINKING_TIME_MS,
+            byoyomiMs: BYOYOMI_TIME_MS,
+            byoyomiPeriods: BYOYOMI_PERIODS,
+        },
+        clocks: projected,
+    };
+}
+
+function emitClockSync(roomId, nowMs = Date.now()) {
+    const game = activeGames.get(roomId);
+    if (!game || game.finished || !hasGameStarted(game)) return;
+    io.to(roomId).emit('clock_sync', buildClockSyncPayload(game, nowMs));
+}
+
+function clearTurnTimeout(game) {
+    if (!game?.turnTimeoutId) return;
+    clearTimeout(game.turnTimeoutId);
+    game.turnTimeoutId = null;
+}
+
+function scheduleTurnTimeout(roomId) {
+    const game = activeGames.get(roomId);
+    if (!game || game.finished || !hasGameStarted(game) || !isValidTeam(game.nextTurn) || !game.turnStartedAt) return;
+
+    clearTurnTimeout(game);
+
+    const activeClock = game.clocks?.[game.nextTurn];
+    const timeoutMs = getTurnLossBudgetMs(activeClock, game.turnByoyomiRemainingMs);
+    const safeTimeoutMs = Math.max(0, Math.floor(timeoutMs));
+
+    game.turnTimeoutId = setTimeout(() => {
+        const currentGame = activeGames.get(roomId);
+        if (!currentGame || currentGame.finished || !hasGameStarted(currentGame)) return;
+
+        const now = Date.now();
+        const timeoutTeam = applyElapsedToActiveTurn(currentGame, now);
+        if (!timeoutTeam) {
+            emitClockSync(roomId, now);
+            scheduleTurnTimeout(roomId);
+            return;
+        }
+
+        emitClockSync(roomId, now);
+        const winnerTeam = getOpponentTeam(timeoutTeam);
+        io.to(roomId).emit('game_over', {
+            winner: winnerTeam,
+            type: 'time',
+            timeoutTeam,
+        });
+        processGameEnd(roomId, winnerTeam, 'time');
+    }, safeTimeoutMs);
+}
+
+function beginNextTurn(game, nextTurn, nowMs = Date.now()) {
+    if (!game || !isValidTeam(nextTurn)) return;
+    game.nextTurn = nextTurn;
+    game.turnStartedAt = nowMs;
+    game.turnByoyomiRemainingMs = getInitialByoyomiForTurn(game);
+}
+
 function findActiveRoomBySocketId(socketId) {
     for (const [roomId, game] of activeGames.entries()) {
         if (getTeamBySocketId(game, socketId)) {
@@ -609,6 +830,7 @@ function cancelPreGameMatch(roomId, reason = 'cancelled', cancelledBy = null) {
         }
     }
 
+    clearTurnTimeout(game);
     activeGames.delete(roomId);
     return true;
 }
@@ -752,7 +974,14 @@ io.on('connection', (socket) => {
           hanSetup: null,
           moveLog: [],
           nextTurn: TEAM_CHO,
-          startTime: new Date(),
+          clocks: {
+              [TEAM_CHO]: createInitialTeamClock(),
+              [TEAM_HAN]: createInitialTeamClock(),
+          },
+          turnStartedAt: null,
+          turnByoyomiRemainingMs: null,
+          turnTimeoutId: null,
+          startTime: null,
           finished: false,
       });
 
@@ -771,6 +1000,13 @@ io.on('connection', (socket) => {
       if (game && isValidTeam(data.team)) {
           if (data.team === TEAM_CHO) game.choSetup = data.setupType;
           if (data.team === TEAM_HAN) game.hanSetup = data.setupType;
+
+          if (hasGameStarted(game) && !game.turnStartedAt) {
+              game.startTime = new Date();
+              beginNextTurn(game, TEAM_CHO, Date.now());
+              emitClockSync(data.room);
+              scheduleTurnTimeout(data.room);
+          }
       }
       // Relay to opponent
       socket.to(data.room).emit('opponent_setup', { team: data.team, setupType: data.setupType });
@@ -793,16 +1029,29 @@ io.on('connection', (socket) => {
     if (game.nextTurn !== actorTeam) return;
     if (!data?.move || !isValidPosition(data.move.from) || !isValidPosition(data.move.to)) return;
 
+    const now = Date.now();
+    const timeoutTeam = applyElapsedToActiveTurn(game, now);
+    if (timeoutTeam) {
+        const winnerTeam = getOpponentTeam(timeoutTeam);
+        emitClockSync(data.room, now);
+        io.to(data.room).emit('game_over', { winner: winnerTeam, type: 'time', timeoutTeam });
+        processGameEnd(data.room, winnerTeam, 'time');
+        return;
+    }
+
+    const moveTimestamp = new Date(now).toISOString();
     game.moveLog.push({
         type: 'move',
         turn: actorTeam,
         from: data.move.from,
         to: data.move.to,
-        at: new Date().toISOString(),
+        at: moveTimestamp,
     });
-    game.nextTurn = getOpponentTeam(actorTeam);
+    beginNextTurn(game, getOpponentTeam(actorTeam), now);
 
     socket.to(data.room).emit('move', data.move);
+    emitClockSync(data.room, now);
+    scheduleTurnTimeout(data.room);
   });
   
   socket.on('pass', (data) => {
@@ -814,14 +1063,27 @@ io.on('connection', (socket) => {
       if (!actorTeam) return;
       if (game.nextTurn !== actorTeam) return;
 
+      const now = Date.now();
+      const timeoutTeam = applyElapsedToActiveTurn(game, now);
+      if (timeoutTeam) {
+          const winnerTeam = getOpponentTeam(timeoutTeam);
+          emitClockSync(data.room, now);
+          io.to(data.room).emit('game_over', { winner: winnerTeam, type: 'time', timeoutTeam });
+          processGameEnd(data.room, winnerTeam, 'time');
+          return;
+      }
+
+      const passTimestamp = new Date(now).toISOString();
       game.moveLog.push({
           type: 'pass',
           turn: actorTeam,
-          at: new Date().toISOString(),
+          at: passTimestamp,
       });
-      game.nextTurn = getOpponentTeam(actorTeam);
+      beginNextTurn(game, getOpponentTeam(actorTeam), now);
 
-      socket.to(data.room).emit('pass_turn');
+      socket.to(data.room).emit('pass_turn', { team: actorTeam, at: passTimestamp });
+      emitClockSync(data.room, now);
+      scheduleTurnTimeout(data.room);
   });
   
   socket.on('resign', (data) => {
@@ -861,6 +1123,22 @@ io.on('connection', (socket) => {
       processGameEnd(data.room, data.winner, 'checkmate');
   });
 
+  socket.on('finish_by_rule', (data) => {
+      const game = activeGames.get(data.room);
+      if (!game || game.finished) return;
+      if (!hasGameStarted(game)) return;
+      if (!isValidTeam(data?.winner)) return;
+
+      const senderTeam = getTeamBySocketId(game, socket.id);
+      if (!senderTeam) return;
+
+      const normalizedType = typeof data.type === 'string' ? data.type.trim().toLowerCase() : '';
+      if (normalizedType !== 'score') return;
+
+      io.to(data.room).emit('game_over', { winner: data.winner, type: normalizedType });
+      processGameEnd(data.room, data.winner, normalizedType);
+  });
+
   socket.on('disconnect', () => {
     // Handle disconnection
     if (socket._authUserId && socket._sessionId) {
@@ -889,6 +1167,7 @@ async function processGameEnd(roomId, winnerTeam, resultType = 'unknown') {
     const game = activeGames.get(roomId);
     if (!game || game.finished || !isValidTeam(winnerTeam)) return;
     game.finished = true;
+    clearTurnTimeout(game);
 
     const winnerId = winnerTeam === TEAM_CHO ? game.cho.id : game.han.id;
     const loserId = winnerTeam === TEAM_CHO ? game.han.id : game.cho.id;
