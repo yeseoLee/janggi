@@ -560,6 +560,11 @@ const Board = ({
 
     setScores(calculateScore(board));
 
+    if (gameMode === 'replay') {
+      setCheckAlert(null);
+      return;
+    }
+
     if (isCheck(board, turn)) {
         setCheckAlert(turn); 
         if (isCheckmate(board, turn)) {
@@ -574,7 +579,7 @@ const Board = ({
     } else {
         setCheckAlert(null);
     }
-  }, [board, turn, gameState]);
+  }, [board, turn, gameMode, gameState]);
 
   // Auto-hide check alert after 1 second
   useEffect(() => {
@@ -1411,7 +1416,7 @@ const Board = ({
             </div>
         </div>
 
-        {winner && (
+        {winner && gameMode !== 'replay' && (
             <div className="game-modal-overlay game-result-overlay">
                 <div className="game-result-modal">
                     <div className="game-result-title">{t('board.gameOver')}</div>
