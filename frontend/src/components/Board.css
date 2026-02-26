@@ -458,6 +458,57 @@
   font-weight: 800;
 }
 
+.match-ready-autostart {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: center;
+}
+
+.match-ready-autostart-label {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #9a3412;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.match-ready-autostart-label::before {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: #f97316;
+  box-shadow: 0 0 0 0 rgba(249, 115, 22, 0.45);
+  animation: matchReadyPulse 1.2s ease-out infinite;
+}
+
+.match-ready-autostart-track {
+  width: 100%;
+  height: 8px;
+  border-radius: 999px;
+  background: #e2e8f0;
+  overflow: hidden;
+}
+
+.match-ready-autostart-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #fb923c, #d97706);
+  transition: width 0.1s linear;
+}
+
+@keyframes matchReadyPulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(249, 115, 22, 0.42);
+  }
+  100% {
+    box-shadow: 0 0 0 10px rgba(249, 115, 22, 0);
+  }
+}
+
 .game-confirm-overlay {
   z-index: 540;
 }

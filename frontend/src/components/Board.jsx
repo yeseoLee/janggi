@@ -19,6 +19,8 @@ const AI_MIN_DEPTH = 2;
 const AI_MAX_DEPTH = 20;
 const AI_DEPTH_PRESETS = [4, 8, 12, 16];
 const SETUP_SELECTION_TIMEOUT_SECONDS = 20;
+const MATCH_READY_AUTO_CONFIRM_SECONDS = 5;
+const MATCH_READY_AUTO_CONFIRM_MS = MATCH_READY_AUTO_CONFIRM_SECONDS * 1000;
 const getOpposingTeam = (team) => (team === TEAM.CHO ? TEAM.HAN : TEAM.CHO);
 
 const cloneBoardState = (boardState) =>
@@ -100,6 +102,7 @@ const Board = ({
   const [showMatchCancelledModal, setShowMatchCancelledModal] = useState(false);
   const [showMatchStartModal, setShowMatchStartModal] = useState(false);
   const [pendingSetupState, setPendingSetupState] = useState(null);
+  const [matchReadyTimeLeftMs, setMatchReadyTimeLeftMs] = useState(MATCH_READY_AUTO_CONFIRM_MS);
 
   const showToast = useCallback((message) => {
     if (!message) return;
@@ -132,6 +135,7 @@ const Board = ({
     setShowMatchStartModal(false);
     setPendingSetupState(null);
     setGameResultMethod(null);
+    setMatchReadyTimeLeftMs(MATCH_READY_AUTO_CONFIRM_MS);
   }, []);
 
   const cancelOnlineMatch = useCallback((reason = 'user_cancel') => {
@@ -826,12 +830,39 @@ const Board = ({
     setShowMatchCancelledModal(false);
     navigate('/');
   };
-  const handleConfirmMatchStart = () => {
+  const handleConfirmMatchStart = useCallback(() => {
     if (!pendingSetupState) return;
     setShowMatchStartModal(false);
     setGameState(pendingSetupState);
     setPendingSetupState(null);
-  };
+  }, [pendingSetupState]);
+
+  const isMatchReadyModalVisible = showMatchStartModal && gameState === 'MATCH_FOUND';
+
+  useEffect(() => {
+    if (!isMatchReadyModalVisible) {
+      setMatchReadyTimeLeftMs(MATCH_READY_AUTO_CONFIRM_MS);
+      return;
+    }
+
+    setMatchReadyTimeLeftMs(MATCH_READY_AUTO_CONFIRM_MS);
+    const startedAt = Date.now();
+
+    const intervalId = setInterval(() => {
+      const elapsed = Date.now() - startedAt;
+      const remainingMs = Math.max(MATCH_READY_AUTO_CONFIRM_MS - elapsed, 0);
+      setMatchReadyTimeLeftMs(remainingMs);
+    }, 100);
+
+    const timeoutId = setTimeout(() => {
+      handleConfirmMatchStart();
+    }, MATCH_READY_AUTO_CONFIRM_MS);
+
+    return () => {
+      clearInterval(intervalId);
+      clearTimeout(timeoutId);
+    };
+  }, [handleConfirmMatchStart, isMatchReadyModalVisible]);
   const setupProgressPercent = Math.max((setupTimeLeft / SETUP_SELECTION_TIMEOUT_SECONDS) * 100, 0);
   const isOnlineSetupTurn =
     gameMode === 'online' && (gameState === 'SETUP_HAN' || gameState === 'SETUP_CHO');
@@ -850,6 +881,11 @@ const Board = ({
   const opponentRating = Number.isFinite(Number(opponentInfo?.rating)) ? Math.floor(Number(opponentInfo.rating)) : '-';
   const myRecordSummary = `${myWins}${t('records.winShort')} ${myLosses}${t('records.lossShort')}`;
   const opponentRecordSummary = `${opponentWins}${t('records.winShort')} ${opponentLosses}${t('records.lossShort')}`;
+  const matchReadySecondsLeft = Math.max(0, Math.ceil(matchReadyTimeLeftMs / 1000));
+  const matchReadyProgressPercent = Math.min(
+    100,
+    Math.max(0, ((MATCH_READY_AUTO_CONFIRM_MS - matchReadyTimeLeftMs) / MATCH_READY_AUTO_CONFIRM_MS) * 100),
+  );
   const perspectiveTeam = myTeam || bottomTeam;
   const didIWin = winner ? winner === perspectiveTeam : false;
   const effectiveResultMethod = gameResultMethod || RESULT_METHOD.CHECKMATE;
@@ -877,11 +913,10 @@ const Board = ({
             </div>
         )}
 
-        {showMatchStartModal && gameState === 'MATCH_FOUND' && (
+        {isMatchReadyModalVisible && (
             <div className="game-modal-overlay">
                 <div className="game-modal-card match-ready-card">
                     <h2 className="game-modal-title">{t('board.matchReadyTitle')}</h2>
-                    <p className="game-modal-subtitle">{t('board.matchReadySubtitle')}</p>
                     <div className="match-ready-summary">
                         <div className="match-ready-player">
                             <div className="match-ready-label">{t('board.matchReadyMe')}</div>
@@ -908,8 +943,16 @@ const Board = ({
                             </div>
                         </div>
                     </div>
+                    <div className="match-ready-autostart">
+                        <div className="match-ready-autostart-label">
+                            {t('board.matchReadyAutoStart', { seconds: matchReadySecondsLeft })}
+                        </div>
+                        <div className="match-ready-autostart-track" role="progressbar" aria-valuemin={0} aria-valuemax={MATCH_READY_AUTO_CONFIRM_SECONDS} aria-valuenow={matchReadySecondsLeft}>
+                            <div className="match-ready-autostart-fill" style={{ width: `${matchReadyProgressPercent}%` }} />
+                        </div>
+                    </div>
                     <button type="button" className="game-modal-primary-btn" onClick={handleConfirmMatchStart}>
-                        {t('common.ok')}
+                        {t('board.matchReadyConfirmButton', { seconds: matchReadySecondsLeft })}
                     </button>
                 </div>
             </div>
