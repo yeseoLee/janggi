@@ -1,50 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate, Link } from 'react-router-dom';
 import axios from 'axios';
 import { useLanguage } from '../context/LanguageContext';
 import BottomNav from '../components/BottomNav';
-
-const GUP_PATTERN = /^([1-9]|1[0-8])급$/;
-const DAN_PATTERN = /^([1-9])단$/;
-
-const normalizeCounter = (value) => {
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed)) return 0;
-  return Math.max(0, Math.floor(parsed));
-};
-
-const getRankThreshold = (rank) => {
-  const gupMatch = rank?.match(GUP_PATTERN);
-  if (gupMatch) {
-    const gup = Number(gupMatch[1]);
-    return gup >= 10 ? 3 : 5;
-  }
-  if (DAN_PATTERN.test(rank || '')) return 7;
-  return 3;
-};
-
-const getRankTier = (rank) => {
-  const gupMatch = rank?.match(GUP_PATTERN);
-  if (gupMatch) return 18 - Number(gupMatch[1]);
-  const danMatch = rank?.match(DAN_PATTERN);
-  if (danMatch) return 17 + Number(danMatch[1]);
-  return 0;
-};
-
-const buildRankProgress = (rank, rankWins, rankLosses) => {
-  const wins = normalizeCounter(rankWins);
-  const losses = normalizeCounter(rankLosses);
-  const threshold = getRankThreshold(rank);
-  const tier = getRankTier(rank);
-  const canPromote = tier < 26;
-  const canDemote = tier > 0;
-  return {
-    wins, losses, canPromote, canDemote,
-    winsRemaining: canPromote ? Math.max(0, threshold - wins) : 0,
-    lossesRemaining: canDemote ? Math.max(0, threshold - losses) : 0,
-  };
-};
 
 function MainMenu() {
   const { user, logout, refreshUser } = useAuth();
@@ -53,6 +12,7 @@ function MainMenu() {
   const [toastMessage, setToastMessage] = useState('');
   const [isStartingAi, setIsStartingAi] = useState(false);
   const [recentGames, setRecentGames] = useState([]);
+  const [matchRequestType, setMatchRequestType] = useState(null);
   const toastTimerRef = useRef(null);
 
   useEffect(() => {
@@ -68,11 +28,6 @@ function MainMenu() {
         .catch(() => {});
     }
   }, [user]);
-
-  const rankProgress = useMemo(
-    () => buildRankProgress(user?.rank, user?.rank_wins, user?.rank_losses),
-    [user?.rank, user?.rank_wins, user?.rank_losses],
-  );
 
   const showToast = (message) => {
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
@@ -99,9 +54,39 @@ function MainMenu() {
     }
   };
 
+  const openMatchRequestModal = (type) => {
+    if (!user) {
+      navigate('/login');
+      return;
+    }
+    setMatchRequestType(type);
+  };
+
+  const closeMatchRequestModal = () => {
+    if (isStartingAi) return;
+    setMatchRequestType(null);
+  };
+
+  const handleConfirmMatchRequest = async () => {
+    if (matchRequestType === 'ai') {
+      setMatchRequestType(null);
+      await handleAiMatchStart();
+      return;
+    }
+
+    if (matchRequestType === 'online') {
+      setMatchRequestType(null);
+      navigate('/game?mode=online');
+    }
+  };
+
   const winRate = user && (user.wins + user.losses > 0)
     ? ((user.wins / (user.wins + user.losses)) * 100).toFixed(1)
     : '0.0';
+  const maxWinStreakRaw = Number(user?.max_win_streak);
+  const maxWinStreak = Number.isFinite(maxWinStreakRaw)
+    ? Math.max(0, Math.floor(maxWinStreakRaw))
+    : 0;
 
   if (!user) {
     return (
@@ -197,7 +182,7 @@ function MainMenu() {
           <div className="profile-card-stats">
             <div className="profile-stat">
               <div className="profile-stat-label">{t('menu.winStreak')}</div>
-              <div className="profile-stat-value primary">{rankProgress.wins}</div>
+              <div className="profile-stat-value primary">{maxWinStreak}</div>
             </div>
             <div className="profile-stat-divider" />
             <div className="profile-stat">
@@ -216,12 +201,12 @@ function MainMenu() {
         </section>
 
         <section className="match-buttons">
-          <button className="match-btn ai" onClick={handleAiMatchStart} disabled={isStartingAi}>
+          <button className="match-btn ai" onClick={() => openMatchRequestModal('ai')} disabled={isStartingAi}>
             <span className="material-icons-round">smart_toy</span>
             <span className="match-btn-title">{t('menu.aiMatchShort')}</span>
             <span className="match-btn-subtitle">{t('menu.aiMatchSub')}</span>
           </button>
-          <button className="match-btn online" onClick={() => navigate('/game?mode=online')}>
+          <button className="match-btn online" onClick={() => openMatchRequestModal('online')}>
             <span className="material-icons-round">sports_esports</span>
             <span className="match-btn-title">{t('menu.onlineMatchShort')}</span>
             <span className="match-btn-subtitle">{t('menu.onlineMatchSub')}</span>
@@ -264,6 +249,28 @@ function MainMenu() {
           </div>
         </section>
       </div>
+
+      {matchRequestType && (
+        <div className="menu-confirm-overlay" onClick={closeMatchRequestModal}>
+          <div className="menu-confirm-card" onClick={(e) => e.stopPropagation()}>
+            <div className="menu-confirm-title">
+              {matchRequestType === 'online' ? t('menu.onlineMatchConfirm') : t('menu.aiMatchConfirm')}
+            </div>
+            <div className="menu-confirm-actions">
+              <button className="menu-confirm-btn secondary" onClick={closeMatchRequestModal}>
+                {t('common.no')}
+              </button>
+              <button
+                className="menu-confirm-btn primary"
+                onClick={handleConfirmMatchRequest}
+                disabled={matchRequestType === 'ai' && isStartingAi}
+              >
+                {t('common.yes')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {toastMessage && <div className="toast-notification">{toastMessage}</div>}
       <BottomNav />

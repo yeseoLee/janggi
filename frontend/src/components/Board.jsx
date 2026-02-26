@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { io } from 'socket.io-client';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
@@ -17,6 +17,7 @@ const AI_DEFAULT_DEPTH = 8;
 const AI_MIN_DEPTH = 2;
 const AI_MAX_DEPTH = 20;
 const AI_DEPTH_PRESETS = [4, 8, 12, 16];
+const SETUP_SELECTION_TIMEOUT_SECONDS = 20;
 const getOpposingTeam = (team) => (team === TEAM.CHO ? TEAM.HAN : TEAM.CHO);
 
 const cloneBoardState = (boardState) =>
@@ -58,7 +59,7 @@ const Board = ({
   
   // Game States
   // IDLE -> MATCHING -> (AI) SELECT_SIDE -> SETUP_HAN/SETUP_CHO -> SETUP_HAN/SETUP_CHO -> PLAYING
-  // IDLE -> MATCHING -> (Online) SETUP_HAN / WAITING_HAN -> SETUP_CHO / WAITING_CHO -> PLAYING
+  // IDLE -> MATCHING -> (Online) MATCH_FOUND -> SETUP_HAN / WAITING_HAN -> SETUP_CHO / WAITING_CHO -> PLAYING
   const [gameState, setGameState] = useState('IDLE'); 
   const [hanSetup, setHanSetup] = useState(null);
   const [choSetup, setChoSetup] = useState(null);
@@ -70,9 +71,13 @@ const Board = ({
   
   // Online Specific
   const [room, setRoom] = useState(null);
+  const roomRef = useRef(null);
   const [myTeam, setMyTeam] = useState(null); 
   const myTeamRef = useRef(null); // Ref to access current team in socket listeners
   const [opponentInfo, setOpponentInfo] = useState(null);
+  const gameStateRef = useRef(gameState);
+  const cancelMatchRef = useRef(false);
+  const [setupTimeLeft, setSetupTimeLeft] = useState(SETUP_SELECTION_TIMEOUT_SECONDS);
 
   // States
   const [history, setHistory] = useState([]);
@@ -87,6 +92,56 @@ const Board = ({
 
   // Replay State
   const [replayStep, setReplayStep] = useState(0); 
+  const [toastMessage, setToastMessage] = useState('');
+  const toastTimerRef = useRef(null);
+  const [showResignModal, setShowResignModal] = useState(false);
+  const [showMatchCancelledModal, setShowMatchCancelledModal] = useState(false);
+  const [showMatchStartModal, setShowMatchStartModal] = useState(false);
+  const [pendingSetupState, setPendingSetupState] = useState(null);
+
+  const showToast = useCallback((message) => {
+    if (!message) return;
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    setToastMessage(message);
+    toastTimerRef.current = setTimeout(() => setToastMessage(''), 2200);
+  }, []);
+
+  useEffect(() => () => {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+  }, []);
+
+  useEffect(() => {
+    roomRef.current = room;
+  }, [room]);
+
+  useEffect(() => {
+    gameStateRef.current = gameState;
+  }, [gameState]);
+
+  const resetOnlineMatchState = useCallback(() => {
+    setGameState('IDLE');
+    setRoom(null);
+    setHanSetup(null);
+    setChoSetup(null);
+    setMyTeam(null);
+    myTeamRef.current = null;
+    setOpponentInfo(null);
+    setSetupTimeLeft(SETUP_SELECTION_TIMEOUT_SECONDS);
+    setShowMatchStartModal(false);
+    setPendingSetupState(null);
+  }, []);
+
+  const cancelOnlineMatch = useCallback((reason = 'user_cancel') => {
+    if (cancelMatchRef.current) return;
+    cancelMatchRef.current = true;
+
+    if (socket.connected) {
+      socket.emit('cancel_match', { room: roomRef.current, reason });
+    }
+
+    resetOnlineMatchState();
+    setShowMatchCancelledModal(true);
+  }, [resetOnlineMatchState]);
 
   // Initialize Replay Board (re-run when replay payload changes)
   useEffect(() => {
@@ -127,7 +182,12 @@ const Board = ({
 
     if (gameMode === 'online') {
         if (!socket.connected) socket.connect();
+        cancelMatchRef.current = false;
         setGameState('MATCHING');
+        setSetupTimeLeft(SETUP_SELECTION_TIMEOUT_SECONDS);
+        setShowMatchCancelledModal(false);
+        setShowMatchStartModal(false);
+        setPendingSetupState(null);
         
         // Request Match
         if (user) {
@@ -138,20 +198,18 @@ const Board = ({
 
         socket.on('match_found', (data) => {
             // data: { room, team, opponent }
+            cancelMatchRef.current = false;
             setRoom(data.room);
             setMyTeam(data.team); 
             myTeamRef.current = data.team; // Update ref
             setOpponentInfo(data.opponent);
+            setSetupTimeLeft(SETUP_SELECTION_TIMEOUT_SECONDS);
+            const initialSetupState = data.team === TEAM.HAN ? 'SETUP_HAN' : 'WAITING_HAN';
+            setPendingSetupState(initialSetupState);
+            setShowMatchStartModal(true);
+            setGameState('MATCH_FOUND');
+            setViewTeam(data.team === TEAM.HAN ? TEAM.HAN : TEAM.CHO);
             
-            // Determine Initial Local State for Setup Phase
-            // Han goes first
-            if (data.team === TEAM.HAN) {
-                setGameState('SETUP_HAN'); // I select
-                setViewTeam(TEAM.HAN);
-            } else {
-                setGameState('WAITING_HAN'); // I wait
-                setViewTeam(TEAM.CHO);
-            }
         });
 
         // Setup Sync
@@ -159,11 +217,20 @@ const Board = ({
              // data: { team, setupType }
              if (data.team === 'han') {
                  setHanSetup(data.setupType);
+                 const isWaitingMatchStartConfirm = gameStateRef.current === 'MATCH_FOUND';
                  // Using ref to get the current assigned team without re-binding listeners
                  if (myTeamRef.current === TEAM.CHO) {
-                     setGameState('SETUP_CHO'); // My turn to setup
+                     if (isWaitingMatchStartConfirm) {
+                       setPendingSetupState('SETUP_CHO');
+                     } else {
+                       setGameState('SETUP_CHO'); // My turn to setup
+                     }
                  } else {
-                     setGameState('WAITING_CHO'); // I am Han, now waiting for Cho
+                     if (isWaitingMatchStartConfirm) {
+                       setPendingSetupState('WAITING_CHO');
+                     } else {
+                       setGameState('WAITING_CHO'); // I am Han, now waiting for Cho
+                     }
                  }
              } else if (data.team === 'cho') {
                  setChoSetup(data.setupType);
@@ -175,7 +242,7 @@ const Board = ({
         });
 
         socket.on('pass_turn', () => {
-             alert(tRef.current('board.alerts.opponentPassed'));
+             showToast(tRef.current('board.alerts.opponentPassed'));
              setHistory(prev => [...prev, { board: cloneBoardState(board), turn }]);
              setTurn(t => t === TEAM.CHO ? TEAM.HAN : TEAM.CHO);
         });
@@ -189,7 +256,7 @@ const Board = ({
                  ((data.resignedTeam && data.resignedTeam !== myTeamCurrent) ||
                    (!data.resignedTeam && data.winner === myTeamCurrent));
                if (opponentResigned) {
-                 alert(tRef.current('board.alerts.opponentResigned'));
+                 showToast(tRef.current('board.alerts.opponentResigned'));
                }
                return;
              }
@@ -197,15 +264,34 @@ const Board = ({
              const messageKey = data.type === 'disconnect'
                ? 'board.alerts.disconnect'
                : 'board.alerts.checkmate';
-             alert(tRef.current(messageKey));
+             showToast(tRef.current(messageKey));
+        });
+
+        socket.on('match_cancelled', (data = {}) => {
+             cancelMatchRef.current = true;
+             resetOnlineMatchState();
+
+             const cancelledBySelf = data.cancelledBy && data.cancelledBy === socket.id;
+             if (!cancelledBySelf) {
+               setShowMatchCancelledModal(true);
+             }
         });
 
         return () => {
+            const preGameStates = ['MATCHING', 'MATCH_FOUND', 'SETUP_HAN', 'SETUP_CHO', 'WAITING_HAN', 'WAITING_CHO'];
+            if (
+              socket.connected &&
+              !cancelMatchRef.current &&
+              preGameStates.includes(gameStateRef.current)
+            ) {
+              socket.emit('cancel_match', { room: roomRef.current, reason: 'leave_before_start' });
+            }
             socket.off('match_found');
             socket.off('opponent_setup');
             socket.off('move');
             socket.off('pass_turn');
             socket.off('game_over');
+            socket.off('match_cancelled');
             socket.disconnect();
         };
     } else if (gameMode === 'ai') {
@@ -225,21 +311,51 @@ const Board = ({
         setAiThinking(false);
         aiThinkingRef.current = false;
         setAiSearchDepth(AI_DEFAULT_DEPTH);
+        setShowMatchCancelledModal(false);
+        setShowMatchStartModal(false);
+        setPendingSetupState(null);
         setGameState('SELECT_SIDE');
         setViewTeam?.(TEAM.CHO);
     } else {
         // Local mode fallback (manual two-side play)
+        setShowMatchCancelledModal(false);
+        setShowMatchStartModal(false);
+        setPendingSetupState(null);
         setGameState('SETUP_HAN');
         setMyTeam(null);
     }
-  }, [gameMode]);
+  }, [gameMode, resetOnlineMatchState]);
 
   // Trigger Game Start when setups are ready (Online)
   useEffect(() => {
       if (gameMode === 'online' && hanSetup && choSetup && gameState !== 'PLAYING') {
+          setSetupTimeLeft(SETUP_SELECTION_TIMEOUT_SECONDS);
           startGame(hanSetup, choSetup);
       }
   }, [hanSetup, choSetup, gameMode, gameState]);
+
+  useEffect(() => {
+    const isMyOnlineSetupTurn =
+      gameMode === 'online' && (gameState === 'SETUP_HAN' || gameState === 'SETUP_CHO');
+    if (!isMyOnlineSetupTurn) {
+      setSetupTimeLeft(SETUP_SELECTION_TIMEOUT_SECONDS);
+      return;
+    }
+
+    setSetupTimeLeft(SETUP_SELECTION_TIMEOUT_SECONDS);
+    const timer = setInterval(() => {
+      setSetupTimeLeft((prev) => Math.max(prev - 1, 0));
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [gameMode, gameState]);
+
+  useEffect(() => {
+    const isMyOnlineSetupTurn =
+      gameMode === 'online' && (gameState === 'SETUP_HAN' || gameState === 'SETUP_CHO');
+    if (!isMyOnlineSetupTurn || setupTimeLeft > 0) return;
+    cancelOnlineMatch('setup_timeout');
+  }, [cancelOnlineMatch, gameMode, gameState, setupTimeLeft]);
 
   const handleAiSideSelect = (team) => {
       if (gameMode !== 'ai' || gameState !== 'SELECT_SIDE') return;
@@ -519,21 +635,38 @@ const Board = ({
 
   const handleOnlinePass = () => {
       if (turn !== myTeam) return;
-      if (checkAlert === turn) { alert(t('board.alerts.cannotPassInCheck')); return; }
+      if (checkAlert === turn) {
+        showToast(t('board.alerts.cannotPassInCheck'));
+        return;
+      }
       socket.emit('pass', { room, team: myTeam });
       setHistory(prev => [...prev, { board: cloneBoardState(board), turn }]);
       setTurn(t => t === TEAM.CHO ? TEAM.HAN : TEAM.CHO);
   };
   
   const handleResign = () => {
-      if (confirm(t('board.alerts.confirmResign'))) {
-          if (gameMode === 'online') {
-              socket.emit('resign', { room, team: myTeam, history });
-          } else {
-              setWinner(turn === TEAM.CHO ? TEAM.HAN : TEAM.CHO);
-          }
+      if (winner || gameState !== 'PLAYING') return;
+      setShowResignModal(true);
+  };
+
+  const handleCancelResign = () => {
+      setShowResignModal(false);
+  };
+
+  const handleConfirmResign = () => {
+      setShowResignModal(false);
+      if (gameMode === 'online') {
+          socket.emit('resign', { room, team: myTeam, history });
+      } else {
+          setWinner(turn === TEAM.CHO ? TEAM.HAN : TEAM.CHO);
       }
   };
+
+  useEffect(() => {
+    if (winner) {
+      setShowResignModal(false);
+    }
+  }, [winner]);
 
 
   // Replay Controls
@@ -614,7 +747,7 @@ const Board = ({
   };
   const choDeadPieces = getCapturedPieceList(TEAM.CHO);
   const hanDeadPieces = getCapturedPieceList(TEAM.HAN);
-  const setupTeam = gameState === 'SETUP_HAN' ? TEAM.HAN : TEAM.CHO;
+  const setupTeam = gameState === 'SETUP_HAN' || gameState === 'WAITING_HAN' ? TEAM.HAN : TEAM.CHO;
   const opponentSetupTeam = setupTeam === TEAM.HAN ? TEAM.CHO : TEAM.HAN;
   const opponentSetupPieces = getSetupPieces(opponentSetupTeam === TEAM.HAN ? hanSetup : choSetup);
   const isAiSetupPhase = gameMode === 'ai' && gameState !== 'SELECT_SIDE';
@@ -658,122 +791,229 @@ const Board = ({
   };
 
   const preventDrag = (e) => e.preventDefault();
+  const handleCancelMatching = () => {
+    cancelOnlineMatch('user_cancel');
+  };
+  const handleSetupClose = () => {
+    if (gameMode === 'online') {
+      cancelOnlineMatch('user_cancel');
+      return;
+    }
+    navigate('/');
+  };
+  const handleCloseMatchCancelledModal = () => {
+    setShowMatchCancelledModal(false);
+    navigate('/');
+  };
+  const handleConfirmMatchStart = () => {
+    if (!pendingSetupState) return;
+    setShowMatchStartModal(false);
+    setGameState(pendingSetupState);
+    setPendingSetupState(null);
+  };
+  const setupProgressPercent = Math.max((setupTimeLeft / SETUP_SELECTION_TIMEOUT_SECONDS) * 100, 0);
+  const isOnlineSetupTurn =
+    gameMode === 'online' && (gameState === 'SETUP_HAN' || gameState === 'SETUP_CHO');
+  const isOnlineSetupWaiting =
+    gameMode === 'online' && (gameState === 'WAITING_HAN' || gameState === 'WAITING_CHO');
+  const myWins = Number.isFinite(Number(user?.wins)) ? Math.max(0, Math.floor(Number(user.wins))) : 0;
+  const myLosses = Number.isFinite(Number(user?.losses)) ? Math.max(0, Math.floor(Number(user.losses))) : 0;
+  const myRating = Number.isFinite(Number(user?.rating)) ? Math.floor(Number(user.rating)) : '-';
+  const opponentWins = Number.isFinite(Number(opponentInfo?.wins)) ? Math.max(0, Math.floor(Number(opponentInfo.wins))) : 0;
+  const opponentLosses = Number.isFinite(Number(opponentInfo?.losses)) ? Math.max(0, Math.floor(Number(opponentInfo.losses))) : 0;
+  const opponentRating = Number.isFinite(Number(opponentInfo?.rating)) ? Math.floor(Number(opponentInfo.rating)) : '-';
+  const myRecordSummary = `${myWins}${t('records.winShort')} ${myLosses}${t('records.lossShort')}`;
+  const opponentRecordSummary = `${opponentWins}${t('records.winShort')} ${opponentLosses}${t('records.lossShort')}`;
 
   return (
     <div className="game-screen" onDragStart={preventDrag}>
         {/* MATCHING OVERLAY */}
         {gameState === 'MATCHING' && (
-            <div className="game-fullscreen-overlay">
-                <div className="spinner"></div>
-                <h2>{t('board.matchingTitle')}</h2>
-                <p>{t('board.matchingSubtitle')}</p>
+            <div className="game-modal-overlay">
+                <div className="game-modal-card">
+                    <div className="spinner"></div>
+                    <h2 className="game-modal-title">{t('board.matchingTitle')}</h2>
+                    <p className="game-modal-subtitle">{t('board.matchingSubtitle')}</p>
+                    <div className="matching-progress-track" role="progressbar" aria-valuetext={t('board.matchingTitle')}>
+                        <div className="matching-progress-fill" />
+                    </div>
+                    <button type="button" className="game-modal-cancel-btn" onClick={handleCancelMatching}>
+                        {t('board.cancelMatch')}
+                    </button>
+                </div>
             </div>
         )}
 
-        {/* WAITING OVERLAY (SETUP) */}
-        {(gameState === 'WAITING_HAN' || gameState === 'WAITING_CHO') && (
-            <div className="game-fullscreen-overlay">
-                <h2>{gameState === 'WAITING_HAN' ? t('board.waitingHan') : t('board.waitingCho')}</h2>
-                <div className="spinner"></div>
+        {showMatchStartModal && gameState === 'MATCH_FOUND' && (
+            <div className="game-modal-overlay">
+                <div className="game-modal-card match-ready-card">
+                    <h2 className="game-modal-title">{t('board.matchReadyTitle')}</h2>
+                    <p className="game-modal-subtitle">{t('board.matchReadySubtitle')}</p>
+                    <div className="match-ready-summary">
+                        <div className="match-ready-player">
+                            <div className="match-ready-label">{t('board.matchReadyMe')}</div>
+                            <div className="match-ready-name">{user?.nickname || t('board.me')}</div>
+                            <div className="match-ready-meta">
+                                <span>{t('records.rating')}</span>
+                                <strong>{myRating}</strong>
+                            </div>
+                            <div className="match-ready-meta">
+                                <span>{t('menu.recordLabel')}</span>
+                                <strong>{myRecordSummary}</strong>
+                            </div>
+                        </div>
+                        <div className="match-ready-player">
+                            <div className="match-ready-label">{t('board.matchReadyOpponent')}</div>
+                            <div className="match-ready-name">{opponentInfo?.nickname || t('board.opponent')}</div>
+                            <div className="match-ready-meta">
+                                <span>{t('records.rating')}</span>
+                                <strong>{opponentRating}</strong>
+                            </div>
+                            <div className="match-ready-meta">
+                                <span>{t('menu.recordLabel')}</span>
+                                <strong>{opponentRecordSummary}</strong>
+                            </div>
+                        </div>
+                    </div>
+                    <button type="button" className="game-modal-primary-btn" onClick={handleConfirmMatchStart}>
+                        {t('common.ok')}
+                    </button>
+                </div>
             </div>
         )}
 
         {/* SETUP OVERLAY (fullscreen, light theme) */}
-        {(gameState === 'SELECT_SIDE' || gameState === 'SETUP_HAN' || gameState === 'SETUP_CHO') && (
+        {(gameState === 'SELECT_SIDE' || gameState === 'SETUP_HAN' || gameState === 'SETUP_CHO' || gameState === 'WAITING_HAN' || gameState === 'WAITING_CHO') && (
             <div className="setup-fullscreen">
-                <header className="setup-fs-header">
-                    <button className="setup-fs-back" onClick={() => navigate('/')}>
-                        <span className="material-icons-round">arrow_back</span>
-                    </button>
-                    <h1 className="setup-fs-title">
-                        {gameState === 'SELECT_SIDE' ? t('board.selectSideTitle') : (gameState === 'SETUP_HAN' ? t('board.setupHanTitle') : t('board.setupChoTitle'))}
-                    </h1>
-                    <div style={{ width: 40 }} />
-                </header>
+                <div className="setup-fs-dialog">
+                    <header className="setup-fs-header">
+                        <button className="setup-fs-back" onClick={handleSetupClose}>
+                            <span className="material-icons-round">arrow_back</span>
+                        </button>
+                        <h1 className="setup-fs-title">
+                            {gameState === 'SELECT_SIDE' ? t('board.selectSideTitle') : (setupTeam === TEAM.HAN ? t('board.setupHanTitle') : t('board.setupChoTitle'))}
+                        </h1>
+                        <div style={{ width: 40 }} />
+                    </header>
 
-                <div className="setup-fs-content">
-                    {gameState === 'SELECT_SIDE' ? (
-                        <>
-                            <p className="setup-fs-subtitle">{t('board.selectSideSubtitle')}</p>
-                            <div className="setup-fs-card">
-                                <div className="setup-fs-card-header">
-                                    <span className="material-icons-round">smart_toy</span>
-                                    <span>{t('board.aiLevelLabel')}</span>
-                                </div>
-                                <div className="setup-fs-slider-row">
-                                    <input
-                                        className="setup-fs-slider"
-                                        type="range"
-                                        min={AI_MIN_DEPTH}
-                                        max={AI_MAX_DEPTH}
-                                        step={1}
-                                        value={aiSearchDepth}
-                                        onChange={(e) => handleAiDepthChange(e.target.value)}
-                                    />
-                                    <span className="setup-fs-depth-value">{t('board.aiLevelDepthValue', { depth: aiSearchDepth })}</span>
-                                </div>
-                                <div className="setup-fs-presets">
-                                    {AI_DEPTH_PRESETS.map((depth) => (
-                                        <button
-                                            key={`ai-depth-${depth}`}
-                                            type="button"
-                                            className={`setup-fs-preset-btn ${aiSearchDepth === depth ? 'active' : ''}`}
-                                            onClick={() => handleAiDepthChange(depth)}
-                                        >
-                                            {t('board.aiLevelPreset', { depth })}
-                                        </button>
-                                    ))}
+                    <div className="setup-fs-content">
+                        {isOnlineSetupTurn && (
+                            <div className="setup-fs-timer">
+                                <span className="setup-fs-timer-label">
+                                    {t('board.setupTimeLeft', { seconds: setupTimeLeft })}
+                                </span>
+                                <div className="setup-fs-timer-track" role="progressbar" aria-valuenow={setupTimeLeft} aria-valuemin={0} aria-valuemax={SETUP_SELECTION_TIMEOUT_SECONDS}>
+                                    <div className="setup-fs-timer-fill" style={{ width: `${setupProgressPercent}%` }} />
                                 </div>
                             </div>
-                            <div className="setup-fs-sides">
-                                <button type="button" className="setup-fs-side-btn cho" onClick={() => handleAiSideSelect(TEAM.CHO)}>
-                                    <span className="setup-fs-side-icon cho">楚</span>
-                                    <span className="setup-fs-side-team">{t('board.team.cho')}</span>
-                                    <span className="setup-fs-side-desc">{t('board.selectSideCho')}</span>
-                                </button>
-                                <button type="button" className="setup-fs-side-btn han" onClick={() => handleAiSideSelect(TEAM.HAN)}>
-                                    <span className="setup-fs-side-icon han">漢</span>
-                                    <span className="setup-fs-side-team">{t('board.team.han')}</span>
-                                    <span className="setup-fs-side-desc">{t('board.selectSideHan')}</span>
-                                </button>
-                            </div>
-                        </>
-                    ) : (
-                        <>
-                            {isAiSetupPhase && (
-                                <p className="setup-fs-subtitle">{isSelectingAiSetup ? t('board.setupAiSubtitle') : t('board.setupMySubtitle')}</p>
-                            )}
-                            {opponentSetupPieces.length > 0 && (
-                                <div className="setup-fs-opponent-preview">
-                                    <div className="setup-fs-opponent-pieces">
-                                        {opponentSetupPieces.map((pType, idx) => (
-                                            <div key={`opponent-setup-${idx}`} className="setup-fs-piece">
-                                                <Piece team={opponentSetupTeam} type={pType} styleVariant={styleVariant} inverted={invertColor} />
-                                            </div>
+                        )}
+                        {gameState === 'SELECT_SIDE' ? (
+                            <>
+                                <p className="setup-fs-subtitle">{t('board.selectSideSubtitle')}</p>
+                                <div className="setup-fs-card">
+                                    <div className="setup-fs-card-header">
+                                        <span className="material-icons-round">smart_toy</span>
+                                        <span>{t('board.aiLevelLabel')}</span>
+                                    </div>
+                                    <div className="setup-fs-slider-row">
+                                        <input
+                                            className="setup-fs-slider"
+                                            type="range"
+                                            min={AI_MIN_DEPTH}
+                                            max={AI_MAX_DEPTH}
+                                            step={1}
+                                            value={aiSearchDepth}
+                                            onChange={(e) => handleAiDepthChange(e.target.value)}
+                                        />
+                                        <span className="setup-fs-depth-value">{t('board.aiLevelDepthValue', { depth: aiSearchDepth })}</span>
+                                    </div>
+                                    <div className="setup-fs-presets">
+                                        {AI_DEPTH_PRESETS.map((depth) => (
+                                            <button
+                                                key={`ai-depth-${depth}`}
+                                                type="button"
+                                                className={`setup-fs-preset-btn ${aiSearchDepth === depth ? 'active' : ''}`}
+                                                onClick={() => handleAiDepthChange(depth)}
+                                            >
+                                                {t('board.aiLevelPreset', { depth })}
+                                            </button>
                                         ))}
                                     </div>
                                 </div>
-                            )}
-                            <div className="setup-fs-options">
-                                {Object.entries(SETUP_TYPES).map(([key, label]) => {
-                                    const setupLabelKey = `board.setupTypes.${key}`;
-                                    const setupLabel = t(setupLabelKey) === setupLabelKey ? label : t(setupLabelKey);
-                                    const pieces = getSetupPieces(key);
-                                    return (
-                                        <button key={key} onClick={() => handleSetupSelect(label)} className="setup-fs-option-btn" aria-label={setupLabel} title={setupLabel}>
-                                            <div className="setup-fs-option-pieces">
-                                                {pieces.map((pType, idx) => (
-                                                    <div key={idx} className="setup-fs-piece">
-                                                        <Piece team={setupTeam} type={pType} styleVariant={styleVariant} inverted={invertColor} />
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        </button>
-                                    );
-                                })}
-                            </div>
-                        </>
-                    )}
+                                <div className="setup-fs-sides">
+                                    <button type="button" className="setup-fs-side-btn cho" onClick={() => handleAiSideSelect(TEAM.CHO)}>
+                                        <span className="setup-fs-side-icon cho">楚</span>
+                                        <span className="setup-fs-side-team">{t('board.team.cho')}</span>
+                                        <span className="setup-fs-side-desc">{t('board.selectSideCho')}</span>
+                                    </button>
+                                    <button type="button" className="setup-fs-side-btn han" onClick={() => handleAiSideSelect(TEAM.HAN)}>
+                                        <span className="setup-fs-side-icon han">漢</span>
+                                        <span className="setup-fs-side-team">{t('board.team.han')}</span>
+                                        <span className="setup-fs-side-desc">{t('board.selectSideHan')}</span>
+                                    </button>
+                                </div>
+                            </>
+                        ) : (
+                            <>
+                                {isOnlineSetupWaiting && (
+                                    <>
+                                        <p className="setup-fs-subtitle">{t('board.waitingSetupSelection')}</p>
+                                        <div className="spinner setup-fs-waiting-spinner" />
+                                    </>
+                                )}
+                                {isAiSetupPhase && (
+                                    <p className="setup-fs-subtitle">{isSelectingAiSetup ? t('board.setupAiSubtitle') : t('board.setupMySubtitle')}</p>
+                                )}
+                                {opponentSetupPieces.length > 0 && (
+                                    <div className="setup-fs-opponent-preview">
+                                        <div className="setup-fs-opponent-pieces">
+                                            {opponentSetupPieces.map((pType, idx) => (
+                                                <div key={`opponent-setup-${idx}`} className="setup-fs-piece">
+                                                    <Piece team={opponentSetupTeam} type={pType} styleVariant={styleVariant} inverted={invertColor} />
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+                                <div className="setup-fs-options">
+                                    {Object.entries(SETUP_TYPES).map(([key, label]) => {
+                                        const setupLabelKey = `board.setupTypes.${key}`;
+                                        const setupLabel = t(setupLabelKey) === setupLabelKey ? label : t(setupLabelKey);
+                                        const pieces = getSetupPieces(key);
+                                        return (
+                                            <button
+                                                key={key}
+                                                onClick={() => handleSetupSelect(label)}
+                                                className="setup-fs-option-btn"
+                                                aria-label={setupLabel}
+                                                title={setupLabel}
+                                                disabled={isOnlineSetupWaiting}
+                                            >
+                                                <div className="setup-fs-option-pieces">
+                                                    {pieces.map((pType, idx) => (
+                                                        <div key={idx} className="setup-fs-piece">
+                                                            <Piece team={setupTeam} type={pType} styleVariant={styleVariant} inverted={invertColor} />
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            </>
+                        )}
+                    </div>
+                </div>
+            </div>
+        )}
+
+        {showMatchCancelledModal && (
+            <div className="game-modal-overlay">
+                <div className="game-modal-card game-match-cancel-card">
+                    <h2 className="game-modal-title">{t('board.alerts.matchCancelled')}</h2>
+                    <button type="button" className="game-modal-primary-btn" onClick={handleCloseMatchCancelledModal}>
+                        {t('common.ok')}
+                    </button>
                 </div>
             </div>
         )}
@@ -827,20 +1067,6 @@ const Board = ({
             {/* Board */}
             <div className="game-board-wrap">
                 <div className="janggi-board">
-                    {/* Winner Overlay */}
-                    {winner && (
-                        <div className="overlay winner-overlay">
-                            <div className="winner-label">{t('board.gameOver')}</div>
-                            <div className="winner-team" style={{ color: winner === TEAM.CHO ? '#2563eb' : '#dc2626' }}>
-                                {t('board.wins', { team: t(`board.team.${winner}`) })}
-                            </div>
-                            {gameMode !== 'online' && gameMode !== 'replay' && (
-                                <button className="winner-btn" onClick={() => window.location.reload()}>{t('board.playAgain')}</button>
-                            )}
-                            <button className="winner-btn secondary" onClick={() => navigate('/')}>{t('board.exitToMenu')}</button>
-                        </div>
-                    )}
-
                     {/* Check Notification */}
                     {checkAlertVisible && !winner && (gameState === 'PLAYING') && (
                         <div className="check-popup">
@@ -1046,6 +1272,45 @@ const Board = ({
                 )}
             </div>
         </div>
+
+        {winner && (
+            <div className="game-modal-overlay game-result-overlay">
+                <div className="game-result-modal">
+                    <div className="game-result-title">{t('board.gameOver')}</div>
+                    <div className={`game-result-winner ${winner}`}>
+                        {t('board.wins', { team: t(`board.team.${winner}`) })}
+                    </div>
+                    <div className="game-result-actions">
+                        {gameMode !== 'online' && gameMode !== 'replay' && (
+                            <button className="winner-btn" onClick={() => window.location.reload()}>
+                                {t('board.playAgain')}
+                            </button>
+                        )}
+                        <button className="winner-btn secondary" onClick={() => navigate('/')}>
+                            {t('board.exitToMenu')}
+                        </button>
+                    </div>
+                </div>
+            </div>
+        )}
+
+        {showResignModal && (
+            <div className="game-modal-overlay game-confirm-overlay" onClick={handleCancelResign}>
+                <div className="game-confirm-card" onClick={(e) => e.stopPropagation()}>
+                    <div className="game-confirm-title">{t('board.alerts.confirmResign')}</div>
+                    <div className="game-confirm-actions">
+                        <button className="game-confirm-btn secondary" onClick={handleCancelResign}>
+                            {t('common.no')}
+                        </button>
+                        <button className="game-confirm-btn primary" onClick={handleConfirmResign}>
+                            {t('common.yes')}
+                        </button>
+                    </div>
+                </div>
+            </div>
+        )}
+
+        {toastMessage && <div className="toast-notification">{toastMessage}</div>}
     </div>
   );
 };

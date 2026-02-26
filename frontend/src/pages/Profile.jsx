@@ -11,11 +11,14 @@ function Profile() {
   const { t, language, setLanguage } = useLanguage();
   const [toastMessage, setToastMessage] = useState('');
   const [isRecharging, setIsRecharging] = useState(false);
+  const [isWithdrawConfirmPending, setIsWithdrawConfirmPending] = useState(false);
   const toastTimerRef = useRef(null);
+  const withdrawConfirmTimerRef = useRef(null);
 
   useEffect(() => {
     return () => {
       if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+      if (withdrawConfirmTimerRef.current) clearTimeout(withdrawConfirmTimerRef.current);
     };
   }, []);
 
@@ -31,14 +34,31 @@ function Profile() {
   };
 
   const handleWithdraw = async () => {
-    if (confirm(t('menu.withdrawConfirm'))) {
-      try {
-        await axios.delete('/api/auth/me');
+    if (!isWithdrawConfirmPending) {
+      setIsWithdrawConfirmPending(true);
+      if (withdrawConfirmTimerRef.current) clearTimeout(withdrawConfirmTimerRef.current);
+      showToast(t('menu.withdrawConfirmToast'));
+      withdrawConfirmTimerRef.current = setTimeout(() => {
+        setIsWithdrawConfirmPending(false);
+        withdrawConfirmTimerRef.current = null;
+      }, 2200);
+      return;
+    }
+
+    setIsWithdrawConfirmPending(false);
+    if (withdrawConfirmTimerRef.current) {
+      clearTimeout(withdrawConfirmTimerRef.current);
+      withdrawConfirmTimerRef.current = null;
+    }
+
+    try {
+      await axios.delete('/api/auth/me');
+      showToast(t('menu.accountDeleted'));
+      setTimeout(() => {
         logout();
-        alert(t('menu.accountDeleted'));
-      } catch {
-        alert(t('menu.withdrawFailed'));
-      }
+      }, 700);
+    } catch {
+      showToast(t('menu.withdrawFailed'));
     }
   };
 

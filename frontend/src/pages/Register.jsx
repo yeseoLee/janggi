@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import axios from 'axios';
 import { useNavigate, Link } from 'react-router-dom';
 import { useLanguage } from '../context/LanguageContext';
@@ -8,15 +8,27 @@ function Register() {
   const [password, setPassword] = useState('');
   const [nickname, setNickname] = useState('');
   const [error, setError] = useState('');
+  const [toastMessage, setToastMessage] = useState('');
   const navigate = useNavigate();
   const { t } = useLanguage();
+  const toastTimerRef = useRef(null);
+
+  useEffect(() => () => {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+  }, []);
+
+  const showToast = (message) => {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    setToastMessage(message);
+    toastTimerRef.current = setTimeout(() => setToastMessage(''), 2200);
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
       await axios.post('/api/auth/register', { username, password, nickname });
-      alert(t('register.success'));
-      navigate('/login');
+      showToast(t('register.success'));
+      setTimeout(() => navigate('/login'), 700);
     } catch (err) {
       setError(err.response?.data?.error || t('register.failed'));
     }
@@ -99,6 +111,7 @@ function Register() {
       </div>
 
       <p className="auth-footer">© 2024 Janggi Master. All rights reserved.</p>
+      {toastMessage && <div className="toast-notification">{toastMessage}</div>}
     </div>
   );
 }
