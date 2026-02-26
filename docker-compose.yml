@@ -38,6 +38,7 @@ services:
       - "80:80"
     depends_on:
       - backend
+      - chat-server
 
   ai-server:
     build: ./ai-server
@@ -48,6 +49,16 @@ services:
       PORT: 4000
       AI_VARIANT: janggi
       AI_MOVE_TIME_MS: 700
+
+  chat-server:
+    build: ./chat-server
+    container_name: janggi-chat-server
+    environment:
+      PORT: 4100
+      JWT_SECRET: secret_key
+      CHAT_MAX_USERS: 1000
+      CHAT_RETENTION_MS: 600000
+      CHAT_MAX_MESSAGE_LENGTH: 300
 
 volumes:
   postgres_data:
