@@ -312,6 +312,7 @@ export const translations = {
       view: '시점',
       invertPieceColor: '기물 색 반전',
       rotateOpponentPieces: '상대 기물 회전',
+      expandBoard: '보드 확대',
       team: {
         cho: '초',
         han: '한',
@@ -665,6 +666,7 @@ export const translations = {
       view: 'View',
       invertPieceColor: 'Invert Piece Color',
       rotateOpponentPieces: 'Rotate Opponent Pieces',
+      expandBoard: 'Expand Board',
       team: {
         cho: 'CHO',
         han: 'HAN',

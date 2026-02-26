@@ -6,6 +6,8 @@ import { toReplayFrames } from '../game/replay';
 import { TEAM } from '../game/constants';
 import { useLanguage } from '../context/LanguageContext';
 
+const BOARD_ZOOM_STORAGE_KEY = 'janggi_board_zoomed';
+
 function ReplayPage() {
     const { id } = useParams();
     const navigate = useNavigate();
@@ -16,7 +18,12 @@ function ReplayPage() {
     const [invertColor, setInvertColor] = useState(false);
     const [useRotatedPieces, setUseRotatedPieces] = useState(false);
     const [styleVariant, setStyleVariant] = useState('2');
+    const [boardZoomed, setBoardZoomed] = useState(() => localStorage.getItem(BOARD_ZOOM_STORAGE_KEY) === '1');
     const { t } = useLanguage();
+
+    useEffect(() => {
+        localStorage.setItem(BOARD_ZOOM_STORAGE_KEY, boardZoomed ? '1' : '0');
+    }, [boardZoomed]);
 
     useEffect(() => {
         setLoading(true);
@@ -67,6 +74,8 @@ function ReplayPage() {
             setUseRotatedPieces={setUseRotatedPieces}
             styleVariant={styleVariant}
             setStyleVariant={setStyleVariant}
+            boardZoomed={boardZoomed}
+            setBoardZoomed={setBoardZoomed}
         />
     );
 }

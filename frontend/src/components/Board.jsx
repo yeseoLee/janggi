@@ -214,7 +214,9 @@ const Board = ({
     viewTeam, setViewTeam, 
     invertColor, setInvertColor, 
     useRotatedPieces, setUseRotatedPieces, 
-    styleVariant, setStyleVariant 
+    styleVariant, setStyleVariant,
+    boardZoomed = false,
+    setBoardZoomed = () => {}
 }) => {
   const { user, token } = useAuth();
   const { t } = useLanguage();
@@ -1418,7 +1420,7 @@ const Board = ({
   const bottomClockLabel = getOnlineClockLabel(bottomTeam);
 
   return (
-    <div className="game-screen" onDragStart={preventDrag}>
+    <div className={`game-screen ${boardZoomed ? 'board-zoomed' : ''}`} onDragStart={preventDrag}>
         {/* MATCHING OVERLAY */}
         {gameState === 'MATCHING' && (
             <div className="game-modal-overlay">
@@ -1646,6 +1648,10 @@ const Board = ({
                 <label className="game-setting-row">
                     <input type="checkbox" checked={useRotatedPieces} onChange={(e) => setUseRotatedPieces(e.target.checked)} />
                     {t('board.rotateOpponentPieces')}
+                </label>
+                <label className="game-setting-row">
+                    <input type="checkbox" checked={boardZoomed} onChange={(e) => setBoardZoomed(e.target.checked)} />
+                    {t('board.expandBoard')}
                 </label>
             </div>
         )}

@@ -144,6 +144,10 @@
   overflow: hidden;
 }
 
+.game-screen.board-zoomed .game-board-wrap {
+  padding: 0;
+}
+
 /* ===== Board (kept from original — core rendering) ===== */
 .janggi-board {
   position: relative;
@@ -161,6 +165,11 @@
   /* Prevent touch scroll & drag on the board */
   touch-action: none;
   -webkit-touch-callout: none;
+}
+
+.game-screen.board-zoomed .janggi-board {
+  width: min(100%, max(240px, calc((100dvh - 245px) * 0.9091)));
+  max-width: none;
 }
 
 .janggi-board::before {
@@ -1491,6 +1500,10 @@
 
   .janggi-board {
     width: min(100%, 500px, max(200px, calc((100dvh - 370px) * 0.9091)));
+  }
+
+  .game-screen.board-zoomed .janggi-board {
+    width: min(100%, max(210px, calc((100dvh - 235px) * 0.9091)));
   }
 
   .game-result-modal {
