@@ -354,9 +354,13 @@ const Board = ({
   }, [hanSetup, choSetup, gameMode, gameState]);
 
   useEffect(() => {
-    const isMyOnlineSetupTurn =
-      gameMode === 'online' && (gameState === 'SETUP_HAN' || gameState === 'SETUP_CHO');
-    if (!isMyOnlineSetupTurn) {
+    const isOnlineSetupPhase = gameMode === 'online' && (
+      gameState === 'SETUP_HAN' ||
+      gameState === 'SETUP_CHO' ||
+      gameState === 'WAITING_HAN' ||
+      gameState === 'WAITING_CHO'
+    );
+    if (!isOnlineSetupPhase) {
       setSetupTimeLeft(SETUP_SELECTION_TIMEOUT_SECONDS);
       return;
     }
@@ -873,6 +877,9 @@ const Board = ({
     : gameState === 'WAITING_CHO'
       ? t('board.waitingCho')
       : t('board.waitingSetupSelection');
+  const setupTimerLabel = isOnlineSetupTurn
+    ? t('board.setupTimeLeft', { seconds: setupTimeLeft })
+    : t('board.waitingSetupTimeLeft', { message: waitingSetupMessage, seconds: setupTimeLeft });
   const myWins = Number.isFinite(Number(user?.wins)) ? Math.max(0, Math.floor(Number(user.wins))) : 0;
   const myLosses = Number.isFinite(Number(user?.losses)) ? Math.max(0, Math.floor(Number(user.losses))) : 0;
   const myRating = Number.isFinite(Number(user?.rating)) ? Math.floor(Number(user.rating)) : '-';
@@ -973,10 +980,10 @@ const Board = ({
                     </header>
 
                     <div className="setup-fs-content">
-                        {isOnlineSetupTurn && (
+                        {(isOnlineSetupTurn || isOnlineSetupWaiting) && (
                             <div className="setup-fs-timer">
                                 <span className="setup-fs-timer-label">
-                                    {t('board.setupTimeLeft', { seconds: setupTimeLeft })}
+                                    {setupTimerLabel}
                                 </span>
                                 <div className="setup-fs-timer-track" role="progressbar" aria-valuenow={setupTimeLeft} aria-valuemin={0} aria-valuemax={SETUP_SELECTION_TIMEOUT_SECONDS}>
                                     <div className="setup-fs-timer-fill" style={{ width: `${setupProgressPercent}%` }} />
@@ -1031,12 +1038,6 @@ const Board = ({
                             </>
                         ) : (
                             <>
-                                {isOnlineSetupWaiting && (
-                                    <>
-                                        <p className="setup-fs-subtitle">{waitingSetupMessage}</p>
-                                        <div className="spinner setup-fs-waiting-spinner" />
-                                    </>
-                                )}
                                 {isAiSetupPhase && (
                                     <p className="setup-fs-subtitle">{isSelectingAiSetup ? t('board.setupAiSubtitle') : t('board.setupMySubtitle')}</p>
                                 )}
