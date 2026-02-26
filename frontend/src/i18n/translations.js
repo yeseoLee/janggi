@@ -137,6 +137,7 @@ export const translations = {
       filterLabel: '대국 유형',
       filterAll: '전체',
       filterRanked: '승강급',
+      filterFriendly: '친선',
       filterAi: 'AI',
     },
     profile: {
@@ -487,6 +488,7 @@ export const translations = {
       filterLabel: 'Game Type',
       filterAll: 'All',
       filterRanked: 'Ranked',
+      filterFriendly: 'Friendly',
       filterAi: 'AI',
     },
     profile: {

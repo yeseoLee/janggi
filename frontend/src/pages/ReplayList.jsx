@@ -78,6 +78,7 @@ function ReplayList() {
   const filteredGames = games.filter((game) => {
     const modeKey = getGameModeKey(game);
     if (modeFilter === 'ai') return modeKey === 'ai';
+    if (modeFilter === 'friendly') return modeKey === 'friendly';
     if (modeFilter === 'ranked') return modeKey === 'ranked';
     return true;
   });
@@ -130,6 +131,13 @@ function ReplayList() {
                 onClick={() => setModeFilter('ranked')}
               >
                 {t('records.filterRanked')}
+              </button>
+              <button
+                type="button"
+                className={`records-filter-tab ${modeFilter === 'friendly' ? 'active' : ''}`}
+                onClick={() => setModeFilter('friendly')}
+              >
+                {t('records.filterFriendly')}
               </button>
               <button
                 type="button"
