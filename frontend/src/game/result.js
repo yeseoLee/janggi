@@ -2,6 +2,7 @@ export const RESULT_METHOD = Object.freeze({
   RESIGN: 'resign',
   TIME: 'time',
   PIECE: 'piece',
+  SCORE: 'score',
   CHECKMATE: 'checkmate',
 });
 
@@ -20,6 +21,11 @@ const PIECE_RESULT_TYPES = new Set([
   'material',
   'material_count',
 ]);
+const SCORE_RESULT_TYPES = new Set([
+  'score',
+  'point',
+  'points',
+]);
 const CHECKMATE_RESULT_TYPES = new Set([
   'checkmate',
   'mate',
@@ -33,6 +39,7 @@ export function normalizeResultMethod(resultType) {
   if (RESIGN_RESULT_TYPES.has(key)) return RESULT_METHOD.RESIGN;
   if (TIME_RESULT_TYPES.has(key)) return RESULT_METHOD.TIME;
   if (PIECE_RESULT_TYPES.has(key)) return RESULT_METHOD.PIECE;
+  if (SCORE_RESULT_TYPES.has(key)) return RESULT_METHOD.SCORE;
   if (CHECKMATE_RESULT_TYPES.has(key)) return RESULT_METHOD.CHECKMATE;
   return RESULT_METHOD.CHECKMATE;
 }

@@ -1165,6 +1165,17 @@
   color: var(--color-text-muted, #9CA3AF);
 }
 
+.game-player-clock {
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: #4B5563;
+  line-height: 1.2;
+}
+
+.game-player-clock.critical {
+  color: #DC2626;
+}
+
 /* ===== Turn Center ===== */
 .game-turn-center {
   display: flex;

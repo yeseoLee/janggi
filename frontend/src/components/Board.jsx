@@ -21,10 +21,148 @@ const AI_DEPTH_PRESETS = [4, 8, 12, 16];
 const SETUP_SELECTION_TIMEOUT_SECONDS = 20;
 const MATCH_READY_AUTO_CONFIRM_SECONDS = 5;
 const MATCH_READY_AUTO_CONFIRM_MS = MATCH_READY_AUTO_CONFIRM_SECONDS * 1000;
+const MAIN_THINKING_TIME_MS = 5 * 60 * 1000;
+const BYOYOMI_TIME_MS = 30 * 1000;
+const BYOYOMI_PERIODS = 3;
+const SCORE_AUTO_LOSE_THRESHOLD = 10;
+const MOVE_LIMIT_PLY = 200;
 const getOpposingTeam = (team) => (team === TEAM.CHO ? TEAM.HAN : TEAM.CHO);
 
 const cloneBoardState = (boardState) =>
   boardState.map((row) => row.map((piece) => (piece ? { ...piece } : null)));
+
+const getSafePositiveMs = (value, fallback = 0) => {
+  const parsed = Math.floor(Number(value));
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.max(0, parsed);
+};
+
+const getSafeNonNegativeInt = (value, fallback = 0) => {
+  const parsed = Math.floor(Number(value));
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.max(0, parsed);
+};
+
+const normalizeClockPayload = (payload) => {
+  const baseByoyomiMs = getSafePositiveMs(payload?.timeControl?.byoyomiMs, BYOYOMI_TIME_MS);
+  const normalizeTeamClock = (clock = {}) => ({
+    mainMs: getSafePositiveMs(clock.mainMs, MAIN_THINKING_TIME_MS),
+    byoyomiPeriods: getSafeNonNegativeInt(clock.byoyomiPeriods, BYOYOMI_PERIODS),
+    byoyomiRemainingMs:
+      clock.byoyomiRemainingMs == null ? null : getSafePositiveMs(clock.byoyomiRemainingMs, baseByoyomiMs),
+  });
+
+  return {
+    nextTurn: payload?.nextTurn === TEAM.HAN ? TEAM.HAN : TEAM.CHO,
+    updatedAt: getSafePositiveMs(payload?.updatedAt, Date.now()),
+    timeControl: {
+      mainMs: getSafePositiveMs(payload?.timeControl?.mainMs, MAIN_THINKING_TIME_MS),
+      byoyomiMs: baseByoyomiMs,
+      byoyomiPeriods: getSafeNonNegativeInt(payload?.timeControl?.byoyomiPeriods, BYOYOMI_PERIODS),
+    },
+    clocks: {
+      [TEAM.CHO]: normalizeTeamClock(payload?.clocks?.[TEAM.CHO]),
+      [TEAM.HAN]: normalizeTeamClock(payload?.clocks?.[TEAM.HAN]),
+    },
+  };
+};
+
+const projectClockAfterElapsed = (clock, elapsedMs, byoyomiMs) => {
+  const safeElapsed = getSafePositiveMs(elapsedMs, 0);
+  const projected = {
+    mainMs: getSafePositiveMs(clock?.mainMs, 0),
+    byoyomiPeriods: getSafeNonNegativeInt(clock?.byoyomiPeriods, 0),
+    byoyomiRemainingMs: clock?.byoyomiRemainingMs == null
+      ? null
+      : getSafePositiveMs(clock.byoyomiRemainingMs, byoyomiMs),
+  };
+
+  if (safeElapsed <= 0) {
+    if (projected.mainMs <= 0) {
+      projected.byoyomiRemainingMs = projected.byoyomiPeriods > 0
+        ? (projected.byoyomiRemainingMs ?? byoyomiMs)
+        : 0;
+    }
+    return projected;
+  }
+
+  let remain = safeElapsed;
+  if (projected.mainMs > 0) {
+    if (remain < projected.mainMs) {
+      projected.mainMs -= remain;
+      remain = 0;
+    } else {
+      remain -= projected.mainMs;
+      projected.mainMs = 0;
+    }
+  }
+
+  if (projected.mainMs <= 0 && projected.byoyomiPeriods > 0) {
+    let byoRemain = projected.byoyomiRemainingMs ?? byoyomiMs;
+    while (remain > 0 && projected.byoyomiPeriods > 0) {
+      if (remain < byoRemain) {
+        byoRemain -= remain;
+        remain = 0;
+        break;
+      }
+      remain -= byoRemain;
+      projected.byoyomiPeriods -= 1;
+      byoRemain = projected.byoyomiPeriods > 0 ? byoyomiMs : 0;
+    }
+    projected.byoyomiRemainingMs = byoRemain;
+  } else if (projected.mainMs <= 0 && projected.byoyomiPeriods <= 0) {
+    projected.byoyomiRemainingMs = 0;
+  }
+
+  if (projected.mainMs <= 0 && projected.byoyomiPeriods <= 0) {
+    projected.mainMs = 0;
+    projected.byoyomiRemainingMs = 0;
+  }
+
+  return projected;
+};
+
+const projectClockPayload = (clockPayload, nowMs = Date.now()) => {
+  if (!clockPayload?.clocks) {
+    return {
+      [TEAM.CHO]: { mainMs: MAIN_THINKING_TIME_MS, byoyomiPeriods: BYOYOMI_PERIODS, byoyomiRemainingMs: null },
+      [TEAM.HAN]: { mainMs: MAIN_THINKING_TIME_MS, byoyomiPeriods: BYOYOMI_PERIODS, byoyomiRemainingMs: null },
+    };
+  }
+
+  const byoyomiMs = getSafePositiveMs(clockPayload?.timeControl?.byoyomiMs, BYOYOMI_TIME_MS);
+  const elapsed = Math.max(0, nowMs - getSafePositiveMs(clockPayload.updatedAt, nowMs));
+  const nextTurn = clockPayload.nextTurn === TEAM.HAN ? TEAM.HAN : TEAM.CHO;
+
+  const projected = {
+    [TEAM.CHO]: { ...clockPayload.clocks[TEAM.CHO] },
+    [TEAM.HAN]: { ...clockPayload.clocks[TEAM.HAN] },
+  };
+  projected[nextTurn] = projectClockAfterElapsed(projected[nextTurn], elapsed, byoyomiMs);
+
+  for (const team of [TEAM.CHO, TEAM.HAN]) {
+    if (projected[team].mainMs <= 0 && projected[team].byoyomiRemainingMs == null) {
+      projected[team].byoyomiRemainingMs = projected[team].byoyomiPeriods > 0 ? byoyomiMs : 0;
+    }
+  }
+
+  return projected;
+};
+
+const formatClockText = (ms) => {
+  const totalSeconds = Math.max(0, Math.ceil(getSafePositiveMs(ms, 0) / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+};
+
+const resolveScoreWinner = (scoreMap) => {
+  const choScore = Number(scoreMap?.[TEAM.CHO] ?? scoreMap?.cho);
+  const hanScore = Number(scoreMap?.[TEAM.HAN] ?? scoreMap?.han);
+  if (!Number.isFinite(choScore) || !Number.isFinite(hanScore)) return null;
+  if (choScore === hanScore) return TEAM.HAN;
+  return choScore > hanScore ? TEAM.CHO : TEAM.HAN;
+};
 
 const pickFallbackAiMove = (boardState, team) => {
   for (let r = 0; r < 10; r += 1) {
@@ -93,6 +231,11 @@ const Board = ({
   const [scores, setScores] = useState({ cho: 72, han: 73.5 });
   const [aiThinking, setAiThinking] = useState(false);
   const aiThinkingRef = useRef(false);
+  const boardRef = useRef(board);
+  const turnRef = useRef(turn);
+  const moveLogRef = useRef(moveLog);
+  const historyRef = useRef(history);
+  const onlineFinishRequestedRef = useRef(false);
   const [aiSearchDepth, setAiSearchDepth] = useState(AI_DEFAULT_DEPTH);
   const aiEngineTeam = myTeam ? getOpposingTeam(myTeam) : null;
 
@@ -105,6 +248,8 @@ const Board = ({
   const [showMatchStartModal, setShowMatchStartModal] = useState(false);
   const [pendingSetupState, setPendingSetupState] = useState(null);
   const [matchReadyTimeLeftMs, setMatchReadyTimeLeftMs] = useState(MATCH_READY_AUTO_CONFIRM_MS);
+  const [onlineClockPayload, setOnlineClockPayload] = useState(null);
+  const [clockNowMs, setClockNowMs] = useState(Date.now());
   const aiReplaySavedRef = useRef(false);
 
   const showToast = useCallback((message) => {
@@ -126,6 +271,22 @@ const Board = ({
     gameStateRef.current = gameState;
   }, [gameState]);
 
+  useEffect(() => {
+    boardRef.current = board;
+  }, [board]);
+
+  useEffect(() => {
+    turnRef.current = turn;
+  }, [turn]);
+
+  useEffect(() => {
+    moveLogRef.current = moveLog;
+  }, [moveLog]);
+
+  useEffect(() => {
+    historyRef.current = history;
+  }, [history]);
+
   const resetOnlineMatchState = useCallback(() => {
     setGameState('IDLE');
     setRoom(null);
@@ -139,6 +300,8 @@ const Board = ({
     setPendingSetupState(null);
     setGameResultMethod(null);
     setMatchReadyTimeLeftMs(MATCH_READY_AUTO_CONFIRM_MS);
+    setOnlineClockPayload(null);
+    onlineFinishRequestedRef.current = false;
   }, []);
 
   const cancelOnlineMatch = useCallback((reason = 'user_cancel') => {
@@ -169,6 +332,8 @@ const Board = ({
       setMoveLog([]);
       setGameStartedAt(null);
       aiReplaySavedRef.current = false;
+      onlineFinishRequestedRef.current = false;
+      setOnlineClockPayload(null);
       setWinner(null);
       setGameResultMethod(null);
       setCheckAlert(null);
@@ -185,6 +350,8 @@ const Board = ({
       setMoveLog([]);
       setGameStartedAt(null);
       aiReplaySavedRef.current = false;
+      onlineFinishRequestedRef.current = false;
+      setOnlineClockPayload(null);
       setWinner(null);
       setGameResultMethod(null);
       setCheckAlert(null);
@@ -214,6 +381,8 @@ const Board = ({
         setMoveLog([]);
         setGameStartedAt(null);
         aiReplaySavedRef.current = false;
+        onlineFinishRequestedRef.current = false;
+        setOnlineClockPayload(null);
         
         // Request Match
         if (user) {
@@ -235,6 +404,8 @@ const Board = ({
             setShowMatchStartModal(true);
             setGameState('MATCH_FOUND');
             setViewTeam(data.team === TEAM.HAN ? TEAM.HAN : TEAM.CHO);
+            setOnlineClockPayload(null);
+            onlineFinishRequestedRef.current = false;
             
         });
 
@@ -267,14 +438,23 @@ const Board = ({
              applyMove(moveData.from, moveData.to, false); 
         });
 
-        socket.on('pass_turn', () => {
+        socket.on('pass_turn', (payload = {}) => {
+             const currentBoard = cloneBoardState(boardRef.current);
+             const currentTurn = turnRef.current;
+             const passTurn = payload.team === TEAM.HAN ? TEAM.HAN : (payload.team === TEAM.CHO ? TEAM.CHO : currentTurn);
              showToast(tRef.current('board.alerts.opponentPassed'));
-             setHistory(prev => [...prev, { board: cloneBoardState(board), turn }]);
-             setMoveLog(prev => [...prev, { type: 'pass', turn, at: new Date().toISOString() }]);
+             setHistory(prev => [...prev, { board: currentBoard, turn: currentTurn }]);
+             setMoveLog(prev => [...prev, { type: 'pass', turn: passTurn, at: payload.at || new Date().toISOString() }]);
              setTurn(t => t === TEAM.CHO ? TEAM.HAN : TEAM.CHO);
         });
 
+        socket.on('clock_sync', (payload) => {
+             setOnlineClockPayload(normalizeClockPayload(payload));
+             setClockNowMs(Date.now());
+        });
+
         socket.on('game_over', (data) => {
+             onlineFinishRequestedRef.current = true;
              setWinner(data.winner);
              setGameResultMethod(normalizeResultMethod(data.type));
              if (data.type === 'resign') {
@@ -290,9 +470,12 @@ const Board = ({
              }
 
              const normalizedMethod = normalizeResultMethod(data.type);
-             const messageKey = normalizedMethod === RESULT_METHOD.TIME
-               ? 'board.alerts.time'
-               : 'board.alerts.checkmate';
+             let messageKey = 'board.alerts.checkmate';
+             if (normalizedMethod === RESULT_METHOD.TIME) {
+               messageKey = 'board.alerts.time';
+             } else if (normalizedMethod === RESULT_METHOD.SCORE || normalizedMethod === RESULT_METHOD.PIECE) {
+               messageKey = 'board.alerts.scoreDecision';
+             }
              showToast(tRef.current(messageKey));
         });
 
@@ -319,6 +502,7 @@ const Board = ({
             socket.off('opponent_setup');
             socket.off('move');
             socket.off('pass_turn');
+            socket.off('clock_sync');
             socket.off('game_over');
             socket.off('match_cancelled');
             socket.disconnect();
@@ -336,6 +520,8 @@ const Board = ({
         setMoveLog([]);
         setGameStartedAt(null);
         aiReplaySavedRef.current = false;
+        onlineFinishRequestedRef.current = false;
+        setOnlineClockPayload(null);
         setWinner(null);
         setGameResultMethod(null);
         setSelectedPos(null);
@@ -359,6 +545,8 @@ const Board = ({
         setMoveLog([]);
         setGameStartedAt(null);
         aiReplaySavedRef.current = false;
+        onlineFinishRequestedRef.current = false;
+        setOnlineClockPayload(null);
         setGameState('SETUP_HAN');
         setMyTeam(null);
     }
@@ -470,6 +658,24 @@ const Board = ({
       setMoveLog([]);
       setGameStartedAt(new Date().toISOString());
       aiReplaySavedRef.current = false;
+      onlineFinishRequestedRef.current = false;
+      if (gameMode === 'online') {
+        setOnlineClockPayload(normalizeClockPayload({
+          nextTurn: TEAM.CHO,
+          updatedAt: Date.now(),
+          timeControl: {
+            mainMs: MAIN_THINKING_TIME_MS,
+            byoyomiMs: BYOYOMI_TIME_MS,
+            byoyomiPeriods: BYOYOMI_PERIODS,
+          },
+          clocks: {
+            [TEAM.CHO]: { mainMs: MAIN_THINKING_TIME_MS, byoyomiPeriods: BYOYOMI_PERIODS },
+            [TEAM.HAN]: { mainMs: MAIN_THINKING_TIME_MS, byoyomiPeriods: BYOYOMI_PERIODS },
+          },
+        }));
+      } else {
+        setOnlineClockPayload(null);
+      }
       setWinner(null);
       setGameResultMethod(null);
       setSelectedPos(null);
@@ -572,14 +778,62 @@ const Board = ({
             setWinner(winnerTeam);
             setGameResultMethod(RESULT_METHOD.CHECKMATE);
             
-            if (gameMode === 'online' && myTeam && turn === myTeam) {
-                 socket.emit('checkmate', { room, winner: winnerTeam, history });
+            if (gameMode === 'online' && myTeam && turn === myTeam && !onlineFinishRequestedRef.current) {
+                 onlineFinishRequestedRef.current = true;
+                 socket.emit('checkmate', { room, winner: winnerTeam, history: historyRef.current });
             }
         }
     } else {
         setCheckAlert(null);
     }
-  }, [board, turn, gameMode, gameState]);
+  }, [board, turn, gameMode, gameState, myTeam, room]);
+
+  const concludeWithScoreDecision = useCallback((winnerTeam, toastKey) => {
+    if (!winnerTeam) return;
+    setWinner(winnerTeam);
+    setGameResultMethod(RESULT_METHOD.SCORE);
+    if (toastKey) {
+      showToast(t(toastKey));
+    }
+    if (gameMode === 'online' && room && !onlineFinishRequestedRef.current) {
+      onlineFinishRequestedRef.current = true;
+      socket.emit('finish_by_rule', { room, winner: winnerTeam, type: 'score' });
+    }
+  }, [gameMode, room, showToast, t]);
+
+  useEffect(() => {
+    if (gameState !== 'PLAYING' || gameMode === 'replay' || winner) return;
+    if (isCheck(board, turn) && isCheckmate(board, turn)) return;
+
+    const scoreWinner = resolveScoreWinner(scores);
+    if (!scoreWinner) return;
+
+    const choLow = scores.cho <= SCORE_AUTO_LOSE_THRESHOLD;
+    const hanLow = scores.han <= SCORE_AUTO_LOSE_THRESHOLD;
+    if (choLow || hanLow) {
+      concludeWithScoreDecision(scoreWinner, 'board.alerts.scoreThresholdEnd');
+      return;
+    }
+
+    if (moveLog.length >= 2) {
+      const lastMove = moveLog[moveLog.length - 1];
+      const prevMove = moveLog[moveLog.length - 2];
+      if (
+        lastMove?.type === 'pass' &&
+        prevMove?.type === 'pass' &&
+        lastMove.turn &&
+        prevMove.turn &&
+        lastMove.turn !== prevMove.turn
+      ) {
+        concludeWithScoreDecision(scoreWinner, 'board.alerts.doublePassEnd');
+        return;
+      }
+    }
+
+    if (moveLog.length >= MOVE_LIMIT_PLY) {
+      concludeWithScoreDecision(scoreWinner, 'board.alerts.moveLimitEnd');
+    }
+  }, [board, concludeWithScoreDecision, gameMode, gameState, moveLog, scores, turn, winner]);
 
   // Auto-hide check alert after 1 second
   useEffect(() => {
@@ -625,13 +879,16 @@ const Board = ({
   };
 
   const applyMove = (from, to, isLocal) => {
-    setHistory(prev => [...prev, { board: cloneBoardState(board), turn }]);
+    const currentBoard = cloneBoardState(boardRef.current);
+    const currentTurn = turnRef.current;
+    const moveTimestamp = new Date().toISOString();
+    setHistory(prev => [...prev, { board: currentBoard, turn: currentTurn }]);
     setMoveLog(prev => [...prev, {
       type: 'move',
-      turn,
+      turn: currentTurn,
       from: { r: from.r, c: from.c },
       to: { r: to.r, c: to.c },
-      at: new Date().toISOString(),
+      at: moveTimestamp,
     }]);
     setBoard(prevBoard => {
         const newBoard = prevBoard.map(row => [...row]);
@@ -653,6 +910,8 @@ const Board = ({
           setMoveLog([]);
           setGameStartedAt(new Date().toISOString());
           aiReplaySavedRef.current = false;
+          onlineFinishRequestedRef.current = false;
+          setOnlineClockPayload(null);
           setWinner(null);
           setGameResultMethod(null);
           setSelectedPos(null);
@@ -680,6 +939,7 @@ const Board = ({
       setTurn(targetState.turn);
       setHistory(history.slice(0, -stepsToUndo));
       setMoveLog(moveLog.slice(0, -stepsToUndo));
+      onlineFinishRequestedRef.current = false;
       setWinner(null);
       setGameResultMethod(null);
       setSelectedPos(null);
@@ -694,9 +954,11 @@ const Board = ({
        if (gameMode === 'ai' && (!myTeam || turn !== myTeam)) return;
        // Check if passing is allowed (e.g. valid moves exist? optional rule)
        // For now allow pass
-       setHistory(prev => [...prev, { board: cloneBoardState(board), turn }]);
-       setMoveLog(prev => [...prev, { type: 'pass', turn, at: new Date().toISOString() }]);
-       setTurn(turn === TEAM.CHO ? TEAM.HAN : TEAM.CHO);
+       const currentBoard = cloneBoardState(boardRef.current);
+       const currentTurn = turnRef.current;
+       setHistory(prev => [...prev, { board: currentBoard, turn: currentTurn }]);
+       setMoveLog(prev => [...prev, { type: 'pass', turn: currentTurn, at: new Date().toISOString() }]);
+       setTurn(prev => prev === TEAM.CHO ? TEAM.HAN : TEAM.CHO);
        setSelectedPos(null);
        setValidMoves([]);
   };
@@ -708,8 +970,10 @@ const Board = ({
         return;
       }
       socket.emit('pass', { room, team: myTeam });
-      setHistory(prev => [...prev, { board: cloneBoardState(board), turn }]);
-      setMoveLog(prev => [...prev, { type: 'pass', turn, at: new Date().toISOString() }]);
+      const currentBoard = cloneBoardState(boardRef.current);
+      const currentTurn = turnRef.current;
+      setHistory(prev => [...prev, { board: currentBoard, turn: currentTurn }]);
+      setMoveLog(prev => [...prev, { type: 'pass', turn: currentTurn, at: new Date().toISOString() }]);
       setTurn(t => t === TEAM.CHO ? TEAM.HAN : TEAM.CHO);
   };
   
@@ -725,7 +989,8 @@ const Board = ({
   const handleConfirmResign = () => {
       setShowResignModal(false);
       if (gameMode === 'online') {
-          socket.emit('resign', { room, team: myTeam, history });
+          onlineFinishRequestedRef.current = true;
+          socket.emit('resign', { room, team: myTeam, history: historyRef.current });
       } else {
           setGameResultMethod(RESULT_METHOD.RESIGN);
           setWinner(turn === TEAM.CHO ? TEAM.HAN : TEAM.CHO);
@@ -933,6 +1198,16 @@ const Board = ({
       clearTimeout(timeoutId);
     };
   }, [handleConfirmMatchStart, isMatchReadyModalVisible]);
+
+  useEffect(() => {
+    if (gameMode !== 'online' || gameState !== 'PLAYING' || !onlineClockPayload || winner) return;
+    setClockNowMs(Date.now());
+    const timer = setInterval(() => {
+      setClockNowMs(Date.now());
+    }, 200);
+    return () => clearInterval(timer);
+  }, [gameMode, gameState, onlineClockPayload, winner]);
+
   const setupProgressPercent = Math.max((setupTimeLeft / SETUP_SELECTION_TIMEOUT_SECONDS) * 100, 0);
   const isOnlineSetupTurn =
     gameMode === 'online' && (gameState === 'SETUP_HAN' || gameState === 'SETUP_CHO');
@@ -966,6 +1241,30 @@ const Board = ({
   const resultSummaryText = didIWin
     ? t('board.resultWin', { method: resultMethodLabel })
     : t('board.resultLoss', { method: resultMethodLabel });
+  const projectedOnlineClocks = gameMode === 'online' && onlineClockPayload
+    ? projectClockPayload(onlineClockPayload, clockNowMs)
+    : null;
+  const getOnlineClockLabel = (team) => {
+    if (!projectedOnlineClocks || !team) return null;
+    const teamClock = projectedOnlineClocks[team];
+    if (!teamClock) return null;
+
+    if (teamClock.mainMs > 0) {
+      return {
+        text: formatClockText(teamClock.mainMs),
+        critical: teamClock.mainMs <= 30 * 1000,
+      };
+    }
+
+    const byoyomiRemainingMs = teamClock.byoyomiRemainingMs ?? BYOYOMI_TIME_MS;
+    const byoyomiSeconds = Math.max(0, Math.ceil(byoyomiRemainingMs / 1000));
+    return {
+      text: t('board.byoyomiClock', { seconds: byoyomiSeconds, periods: teamClock.byoyomiPeriods }),
+      critical: byoyomiSeconds <= 10 || teamClock.byoyomiPeriods <= 1,
+    };
+  };
+  const topClockLabel = getOnlineClockLabel(topTeam);
+  const bottomClockLabel = getOnlineClockLabel(bottomTeam);
 
   return (
     <div className="game-screen" onDragStart={preventDrag}>
@@ -1291,6 +1590,9 @@ const Board = ({
                             {gameMode === 'online' ? (opponentInfo?.nickname || t('board.opponent')) : (gameMode === 'ai' ? 'AI' : t('board.opponent'))}
                         </span>
                         <span className="game-player-score">{topTeam === TEAM.CHO ? scores.cho : scores.han}{t('board.pointUnit')}</span>
+                        {gameMode === 'online' && topClockLabel && (
+                          <span className={`game-player-clock ${topClockLabel.critical ? 'critical' : ''}`}>{topClockLabel.text}</span>
+                        )}
                     </div>
                 </div>
 
@@ -1313,6 +1615,9 @@ const Board = ({
                             {user?.nickname || t('board.me')}
                         </span>
                         <span className="game-player-score">{bottomTeam === TEAM.CHO ? scores.cho : scores.han}{t('board.pointUnit')}</span>
+                        {gameMode === 'online' && bottomClockLabel && (
+                          <span className={`game-player-clock ${bottomClockLabel.critical ? 'critical' : ''}`}>{bottomClockLabel.text}</span>
+                        )}
                     </div>
                     <div className={`game-player-avatar me ${turn === bottomTeam ? 'active-turn' : ''}`}>
                         <span className="material-icons-round">person</span>
