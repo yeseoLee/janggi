@@ -6,6 +6,7 @@ const path = require('path');
 const { Pool } = require('pg');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
+const { randomUUID } = require('crypto');
 const {
   NotEnoughCoinsError,
   UserNotFoundError,
@@ -52,6 +53,24 @@ const io = new Server(server, {
   }
 });
 
+// userId(string) -> { sessionId: string, sockets: Set<string> }
+const activeSessions = new Map();
+
+function getSessionKey(userId) {
+  return String(userId);
+}
+
+function isSessionActive(userId, sessionId) {
+  if (!userId || !sessionId) return false;
+  const key = getSessionKey(userId);
+  const existing = activeSessions.get(key);
+  if (!existing) {
+    activeSessions.set(key, { sessionId, sockets: new Set() });
+    return true;
+  }
+  return existing.sessionId === sessionId;
+}
+
 app.use(cors());
 app.use(express.json());
 
@@ -67,6 +86,12 @@ const authenticateToken = (req, res, next) => {
 
   jwt.verify(token, process.env.JWT_SECRET || 'secret_key', (err, user) => {
     if (err) return res.sendStatus(403);
+    if (!user?.id || !user?.sid) {
+      return res.status(401).json({ error: 'Invalid session', code: 'SESSION_INVALID' });
+    }
+    if (!isSessionActive(user.id, user.sid)) {
+      return res.status(401).json({ error: 'Duplicate login detected', code: 'DUPLICATE_LOGIN' });
+    }
     req.user = user;
     next();
   });
@@ -111,7 +136,20 @@ app.post('/api/auth/login', async (req, res) => {
     const validPassword = await bcrypt.compare(password, user.password);
     if (!validPassword) return res.status(401).json({ error: 'Invalid credentials' });
 
-    const token = jwt.sign({ id: user.id, username: user.username }, process.env.JWT_SECRET || 'secret_key', { expiresIn: '1h' });
+    const userKey = getSessionKey(user.id);
+    const previousSession = activeSessions.get(userKey);
+    if (previousSession) {
+      terminateSessionSockets(user.id, previousSession, 'duplicate_login');
+    }
+
+    const sessionId = randomUUID();
+    activeSessions.set(userKey, { sessionId, sockets: new Set() });
+
+    const token = jwt.sign(
+      { id: user.id, username: user.username, sid: sessionId },
+      process.env.JWT_SECRET || 'secret_key',
+      { expiresIn: '1h' },
+    );
     const maxWinStreak = await fetchMaxWinStreak(user.id);
     
     // Return user info without password
@@ -239,6 +277,12 @@ app.post('/api/coins/recharge', authenticateToken, async (req, res) => {
 // Withdrawal (Delete Account)
 app.delete('/api/auth/me', authenticateToken, async (req, res) => {
     try {
+        const sessionKey = getSessionKey(req.user.id);
+        const sessionRecord = activeSessions.get(sessionKey);
+        if (sessionRecord) {
+            terminateSessionSockets(req.user.id, sessionRecord, 'account_deleted');
+            activeSessions.delete(sessionKey);
+        }
         await pool.query('DELETE FROM users WHERE id = $1', [req.user.id]);
         res.json({ message: 'Account deleted' });
     } catch (err) {
@@ -403,6 +447,20 @@ function getTeamBySocketId(game, socketId) {
     return null;
 }
 
+function getSocketAuthToken(socket) {
+    const authToken = socket?.handshake?.auth?.token;
+    if (typeof authToken === 'string' && authToken.trim()) return authToken.trim();
+
+    const authHeader = socket?.handshake?.headers?.authorization;
+    if (typeof authHeader === 'string' && authHeader.startsWith('Bearer ')) {
+        return authHeader.slice(7).trim();
+    }
+
+    const queryToken = socket?.handshake?.query?.token;
+    if (typeof queryToken === 'string' && queryToken.trim()) return queryToken.trim();
+    return null;
+}
+
 // Game State Memory
 // roomId -> { cho, han, choSetup, hanSetup, moveLog, nextTurn, startTime, finished }
 const activeGames = new Map();
@@ -441,16 +499,100 @@ function cancelPreGameMatch(roomId, reason = 'cancelled', cancelledBy = null) {
     return true;
 }
 
+function registerSessionSocket(userId, sessionId, socketId) {
+    const key = getSessionKey(userId);
+    const record = activeSessions.get(key);
+    if (!record || record.sessionId !== sessionId) return false;
+    record.sockets.add(socketId);
+    return true;
+}
+
+function unregisterSessionSocket(userId, sessionId, socketId) {
+    const key = getSessionKey(userId);
+    const record = activeSessions.get(key);
+    if (!record || record.sessionId !== sessionId) return;
+    record.sockets.delete(socketId);
+}
+
+function forceResignForSocket(socketId) {
+    for (const [roomId, game] of activeGames.entries()) {
+        const resignTeam = getTeamBySocketId(game, socketId);
+        if (!resignTeam || game.finished) continue;
+
+        if (!hasGameStarted(game)) {
+            cancelPreGameMatch(roomId, 'duplicate_login_before_start', socketId);
+            return true;
+        }
+
+        const winnerTeam = getOpponentTeam(resignTeam);
+        io.to(roomId).emit('game_over', {
+            winner: winnerTeam,
+            type: 'resign',
+            resignedTeam: resignTeam,
+        });
+        processGameEnd(roomId, winnerTeam, 'resign');
+        return true;
+    }
+    return false;
+}
+
+function terminateSessionSockets(userId, sessionRecord, reason = 'duplicate_login') {
+    if (!sessionRecord) return;
+
+    const socketIds = Array.from(sessionRecord.sockets || []);
+    for (const socketId of socketIds) {
+        forceResignForSocket(socketId);
+
+        const targetSocket = io.sockets.sockets.get(socketId);
+        if (!targetSocket) continue;
+        targetSocket.emit('session_terminated', { reason });
+        targetSocket.disconnect(true);
+    }
+
+    sessionRecord.sockets.clear();
+}
+
 io.on('connection', (socket) => {
   // ... (connection log)
-  socket._userInfo = null; 
+  socket._userInfo = null;
+  socket._authUserId = null;
+  socket._sessionId = null;
+
+  const socketToken = getSocketAuthToken(socket);
+  if (!socketToken) {
+    socket.disconnect(true);
+    return;
+  }
+
+  try {
+    const decoded = jwt.verify(socketToken, process.env.JWT_SECRET || 'secret_key');
+    if (!decoded?.id || !decoded?.sid || !isSessionActive(decoded.id, decoded.sid)) {
+      socket.emit('session_terminated', { reason: 'duplicate_login' });
+      socket.disconnect(true);
+      return;
+    }
+    socket._authUserId = decoded.id;
+    socket._sessionId = decoded.sid;
+    registerSessionSocket(decoded.id, decoded.sid, socket.id);
+  } catch (_err) {
+    socket.disconnect(true);
+    return;
+  }
 
   socket.on('find_match', (userInfo) => {
-    socket._userInfo = userInfo; 
+    if (!socket._authUserId || !socket._sessionId) return;
+    if (!isSessionActive(socket._authUserId, socket._sessionId)) {
+      socket.emit('session_terminated', { reason: 'duplicate_login' });
+      socket.disconnect(true);
+      return;
+    }
+    if (!userInfo || String(userInfo.id) !== String(socket._authUserId)) return;
+
+    socket._userInfo = { ...userInfo, id: socket._authUserId };
     console.log(`User ${socket.id} (${userInfo?.nickname}) looking for match`);
     
     if (matchQueue.find((u) => u.socket.id === socket.id)) return;
-    matchQueue.push({ socket, userInfo });
+    matchQueue.push({ socket, userInfo: socket._userInfo });
 
     if (matchQueue.length >= 2) {
       const p1 = matchQueue.shift();
@@ -606,6 +748,9 @@ io.on('connection', (socket) => {
 
   socket.on('disconnect', () => {
     // Handle disconnection
+    if (socket._authUserId && socket._sessionId) {
+        unregisterSessionSocket(socket._authUserId, socket._sessionId, socket.id);
+    }
     matchQueue = matchQueue.filter(u => u.socket.id !== socket.id);
 
     for (const [roomId, game] of activeGames.entries()) {

@@ -8,6 +8,9 @@ export const translations = {
       no: '아니요',
       ok: '확인',
     },
+    auth: {
+      duplicateLoginForcedLogout: '중복 로그인이 감지되었습니다. 로그아웃합니다.',
+    },
     nav: {
       home: '홈',
       puzzle: '묘수풀이',
@@ -257,6 +260,9 @@ export const translations = {
       yes: 'Yes',
       no: 'No',
       ok: 'OK',
+    },
+    auth: {
+      duplicateLoginForcedLogout: 'Duplicate login detected. You will be logged out.',
     },
     nav: {
       home: 'Home',

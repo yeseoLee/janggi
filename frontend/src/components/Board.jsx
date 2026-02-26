@@ -48,7 +48,7 @@ const Board = ({
     useRotatedPieces, setUseRotatedPieces, 
     styleVariant, setStyleVariant 
 }) => {
-  const { user } = useAuth();
+  const { user, token } = useAuth();
   const { t } = useLanguage();
   const navigate = useNavigate();
   const tRef = useRef(t);
@@ -186,6 +186,11 @@ const Board = ({
     if (gameMode === 'replay') return;
 
     if (gameMode === 'online') {
+        if (!token) {
+            navigate('/login');
+            return;
+        }
+        socket.auth = { token };
         if (!socket.connected) socket.connect();
         cancelMatchRef.current = false;
         setGameState('MATCHING');
@@ -334,7 +339,7 @@ const Board = ({
         setGameState('SETUP_HAN');
         setMyTeam(null);
     }
-  }, [gameMode, resetOnlineMatchState]);
+  }, [gameMode, navigate, resetOnlineMatchState, token]);
 
   // Trigger Game Start when setups are ready (Online)
   useEffect(() => {
