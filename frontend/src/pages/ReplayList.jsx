@@ -45,9 +45,10 @@ function ReplayList() {
   };
 
   const getGameType = (game) => {
-    if (game.game_mode === 'ai') return t('records.aiMatch');
-    if (game.game_mode === 'online') return t('records.rankedMatch');
-    return t('records.friendlyMatch');
+    const mode = String(game.game_mode || '').toLowerCase();
+    if (mode === 'ai') return t('records.aiMatch');
+    if (mode === 'friendly' || mode === 'casual') return t('records.friendlyMatch');
+    return t('records.rankedMatch');
   };
 
   const getResultType = (game, result) => {

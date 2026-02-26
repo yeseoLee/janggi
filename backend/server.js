@@ -315,6 +315,7 @@ const initDB = async () => {
                 id SERIAL PRIMARY KEY,
                 winner_id INTEGER REFERENCES users(id),
                 loser_id INTEGER REFERENCES users(id),
+                game_mode VARCHAR(20) DEFAULT 'online',
                 winner_team VARCHAR(10),
                 loser_team VARCHAR(10),
                 moves TEXT, -- backward compatibility payload
@@ -332,10 +333,12 @@ const initDB = async () => {
         await pool.query(`ALTER TABLE games ADD COLUMN IF NOT EXISTS cho_setup VARCHAR(50);`);
         await pool.query(`ALTER TABLE games ADD COLUMN IF NOT EXISTS han_setup VARCHAR(50);`);
         await pool.query(`ALTER TABLE games ADD COLUMN IF NOT EXISTS move_log JSONB;`);
+        await pool.query(`ALTER TABLE games ADD COLUMN IF NOT EXISTS game_mode VARCHAR(20) DEFAULT 'online';`);
         await pool.query(`ALTER TABLE games ADD COLUMN IF NOT EXISTS result_type VARCHAR(20);`);
         await pool.query(`ALTER TABLE games ADD COLUMN IF NOT EXISTS move_count INTEGER DEFAULT 0;`);
         await pool.query(`ALTER TABLE games ADD COLUMN IF NOT EXISTS started_at TIMESTAMP;`);
         await pool.query(`ALTER TABLE games ADD COLUMN IF NOT EXISTS ended_at TIMESTAMP;`);
+        await pool.query(`UPDATE games SET game_mode = 'online' WHERE game_mode IS NULL;`);
 
         await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS rank_wins INTEGER DEFAULT 0;`);
         await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS rank_losses INTEGER DEFAULT 0;`);
@@ -462,7 +465,7 @@ function getSocketAuthToken(socket) {
 }
 
 // Game State Memory
-// roomId -> { cho, han, choSetup, hanSetup, moveLog, nextTurn, startTime, finished }
+// roomId -> { cho, han, mode, choSetup, hanSetup, moveLog, nextTurn, startTime, finished }
 const activeGames = new Map();
 
 // Socket.io Logic
@@ -633,6 +636,7 @@ io.on('connection', (socket) => {
       activeGames.set(roomId, {
           cho: { id: choPlayer.userInfo.id, socketId: choPlayer.socket.id },
           han: { id: hanPlayer.userInfo.id, socketId: hanPlayer.socket.id },
+          mode: 'online',
           choSetup: null,
           hanSetup: null,
           moveLog: [],
@@ -778,6 +782,7 @@ async function processGameEnd(roomId, winnerTeam, resultType = 'unknown') {
     const winnerId = winnerTeam === TEAM_CHO ? game.cho.id : game.han.id;
     const loserId = winnerTeam === TEAM_CHO ? game.han.id : game.cho.id;
     const loserTeam = getOpponentTeam(winnerTeam);
+    const gameMode = game.mode || 'online';
 
     const moveLog = Array.isArray(game.moveLog) ? game.moveLog : [];
     const replayPayload = {
@@ -877,12 +882,13 @@ async function processGameEnd(roomId, winnerTeam, resultType = 'unknown') {
         // Save Game Record
         await client.query(
             `INSERT INTO games (
-                winner_id, loser_id, winner_team, loser_team,
+                winner_id, loser_id, game_mode, winner_team, loser_team,
                 moves, cho_setup, han_setup, move_log, result_type, move_count, started_at, ended_at
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10, $11, $12)`,
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10, $11, $12, $13)`,
             [
                 winnerId,
                 loserId,
+                gameMode,
                 winnerTeam,
                 loserTeam,
                 JSON.stringify(replayPayload), // backward compatibility
@@ -924,6 +930,7 @@ app.get('/api/games', authenticateToken, async (req, res) => {
                 g.played_at,
                 g.started_at,
                 g.ended_at,
+                COALESCE(g.game_mode, 'online') AS game_mode,
                 g.winner_team,
                 g.loser_team,
                 COALESCE(g.result_type, 'unknown') AS result_type,

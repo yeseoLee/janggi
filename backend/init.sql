@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS games (
     id SERIAL PRIMARY KEY,
     winner_id INTEGER REFERENCES users(id),
     loser_id INTEGER REFERENCES users(id),
+    game_mode VARCHAR(20) DEFAULT 'online',
     winner_team VARCHAR(10),
     loser_team VARCHAR(10),
     moves TEXT, -- backward compatibility payload
