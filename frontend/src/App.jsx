@@ -13,7 +13,10 @@ import { useLanguage } from './context/LanguageContext';
 import './App.css';
 
 const ProtectedRoute = ({ children }) => {
-    const { token } = useAuth();
+    const { token, authLoading } = useAuth();
+    if (token && authLoading) {
+        return <div className="page-loading">Loading...</div>;
+    }
     if (!token) {
         return <Navigate to="/login" replace />;
     }

@@ -8,7 +8,7 @@ function Login() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
-  const { login, token, user } = useAuth();
+  const { login, token, user, authLoading } = useAuth();
   const navigate = useNavigate();
   const { t } = useLanguage();
 
@@ -17,6 +17,10 @@ function Login() {
       navigate('/', { replace: true });
     }
   }, [navigate, token, user]);
+
+  if (token && authLoading) {
+    return <div className="page-loading">{t('replay.loading')}</div>;
+  }
 
   const handleSubmit = async (e) => {
     e.preventDefault();

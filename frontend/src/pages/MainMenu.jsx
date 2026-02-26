@@ -37,7 +37,7 @@ function canDemote(rankStr) {
 }
 
 function MainMenu() {
-  const { user, token, refreshUser } = useAuth();
+  const { user, token, refreshUser, authLoading } = useAuth();
   const navigate = useNavigate();
   const { t } = useLanguage();
   const [toastMessage, setToastMessage] = useState('');
@@ -248,6 +248,10 @@ function MainMenu() {
   const lossesToDemotion = isDemotionAvailable ? Math.max(rankThreshold + rankNet, 0) : 0;
   const promotionProgressPercent = Math.min(Math.max((rankNet / rankThreshold) * 100, 0), 100);
   const demotionProgressPercent = Math.min(Math.max(((-rankNet) / rankThreshold) * 100, 0), 100);
+
+  if (token && authLoading && !user) {
+    return <div className="page-loading">{t('replay.loading')}</div>;
+  }
 
   if (!user) {
     return (

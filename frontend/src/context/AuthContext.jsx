@@ -5,8 +5,10 @@ import { io } from 'socket.io-client';
 const AuthContext = createContext(null);
 
 export const AuthProvider = ({ children }) => {
+  const initialToken = localStorage.getItem('token');
   const [user, setUser] = useState(null);
-  const [token, setToken] = useState(localStorage.getItem('token'));
+  const [token, setToken] = useState(initialToken);
+  const [authLoading, setAuthLoading] = useState(Boolean(initialToken));
   const [forcedLogoutReason, setForcedLogoutReason] = useState(null);
   const authSocketRef = useRef(null);
   const tokenRef = useRef(token);
@@ -28,12 +30,14 @@ export const AuthProvider = ({ children }) => {
     delete axios.defaults.headers.common['Authorization'];
     setToken(null);
     setUser(null);
+    setAuthLoading(false);
     setForcedLogoutReason(null);
   }, []);
 
   const refreshUser = useCallback(async () => {
     const activeToken = tokenRef.current;
     if (!activeToken) return null;
+    setAuthLoading(true);
     try {
       const res = await axios.get('/api/user/me');
       if (tokenRef.current !== activeToken) return null;
@@ -47,6 +51,10 @@ export const AuthProvider = ({ children }) => {
       }
       logout();
       return null;
+    } finally {
+      if (tokenRef.current === activeToken) {
+        setAuthLoading(false);
+      }
     }
   }, [logout, markDuplicateLogin]);
 
@@ -73,6 +81,7 @@ export const AuthProvider = ({ children }) => {
     const controller = new AbortController();
 
     if (token) {
+      setAuthLoading(true);
       axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
       axios.get('/api/user/me', { signal: controller.signal })
         .then((res) => {
@@ -87,10 +96,15 @@ export const AuthProvider = ({ children }) => {
             return;
           }
           logout();
+        })
+        .finally(() => {
+          if (!isActive || tokenRef.current !== token) return;
+          setAuthLoading(false);
         });
     } else {
       delete axios.defaults.headers.common['Authorization'];
       setUser(null);
+      setAuthLoading(false);
     }
 
     return () => {
@@ -134,6 +148,7 @@ export const AuthProvider = ({ children }) => {
     axios.defaults.headers.common['Authorization'] = `Bearer ${newToken}`;
     setToken(newToken);
     setUser(userInfo);
+    setAuthLoading(false);
     setForcedLogoutReason(null);
   };
 
@@ -145,6 +160,7 @@ export const AuthProvider = ({ children }) => {
         login,
         logout,
         refreshUser,
+        authLoading,
         forcedLogoutReason,
         acknowledgeForcedLogout,
       }}
