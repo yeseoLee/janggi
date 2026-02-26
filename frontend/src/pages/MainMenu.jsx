@@ -4,6 +4,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import axios from 'axios';
 import { useLanguage } from '../context/LanguageContext';
 import BottomNav from '../components/BottomNav';
+import { normalizeResultMethod } from '../game/result';
 
 function MainMenu() {
   const { user, logout, refreshUser } = useAuth();
@@ -115,8 +116,12 @@ function MainMenu() {
 
   const getResultLabel = (game) => {
     if (!game.winner_name) return { type: 'draw', label: t('records.draw') };
-    if (game.winner_name === user.nickname) return { type: 'win', label: t('records.win') };
-    return { type: 'loss', label: t('records.loss') };
+    const resultMethod = normalizeResultMethod(game.result_type);
+    const methodLabel = t(`replay.result.${resultMethod}`);
+    if (game.winner_name === user.nickname) {
+      return { type: 'win', label: t('replay.resultWin', { method: methodLabel }) };
+    }
+    return { type: 'loss', label: t('replay.resultLoss', { method: methodLabel }) };
   };
 
   const getTeamChar = (game) => {

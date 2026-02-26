@@ -1359,11 +1359,11 @@ const Board = ({
                     </div>
                     <div className="game-result-actions">
                         {gameMode !== 'online' && gameMode !== 'replay' && (
-                            <button className="winner-btn" onClick={() => window.location.reload()}>
+                            <button className="game-result-btn secondary" onClick={() => window.location.reload()}>
                                 {t('board.playAgain')}
                             </button>
                         )}
-                        <button className="winner-btn secondary" onClick={() => navigate('/')}>
+                        <button className="game-result-btn primary" onClick={() => navigate('/')}>
                             {t('board.exitToMenu')}
                         </button>
                     </div>
