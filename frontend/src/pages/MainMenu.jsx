@@ -241,12 +241,13 @@ function MainMenu() {
     : '0.0';
   const currentRank = user?.rank || '18급';
   const rankThreshold = getRankThreshold(currentRank);
+  const rankNet = rankWins - rankLosses;
   const isPromotionAvailable = canPromote(currentRank);
   const isDemotionAvailable = canDemote(currentRank);
-  const winsToPromotion = isPromotionAvailable ? Math.max(rankThreshold - rankWins, 0) : 0;
-  const lossesToDemotion = isDemotionAvailable ? Math.max(rankThreshold - rankLosses, 0) : 0;
-  const promotionProgressPercent = Math.min((rankWins / rankThreshold) * 100, 100);
-  const demotionProgressPercent = Math.min((rankLosses / rankThreshold) * 100, 100);
+  const winsToPromotion = isPromotionAvailable ? Math.max(rankThreshold - rankNet, 0) : 0;
+  const lossesToDemotion = isDemotionAvailable ? Math.max(rankThreshold + rankNet, 0) : 0;
+  const promotionProgressPercent = Math.min(Math.max((rankNet / rankThreshold) * 100, 0), 100);
+  const demotionProgressPercent = Math.min(Math.max(((-rankNet) / rankThreshold) * 100, 0), 100);
 
   if (!user) {
     return (

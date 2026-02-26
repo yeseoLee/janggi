@@ -73,19 +73,17 @@ function resolveRankAfterResult(rankStr, rankWins, rankLosses, result) {
   if (result === 'loss') losses += 1;
 
   // At most one rank change per game.
+  // Rank progress is based on net momentum (wins - losses) in current rank.
   const threshold = getRankThreshold(nextRank);
-  if (wins >= threshold && canPromote(nextRank)) {
+  const net = wins - losses;
+  if (net >= threshold && canPromote(nextRank)) {
     nextRank = promoteRank(nextRank);
     wins = 0;
     losses = 0;
-  } else if (losses >= threshold && canDemote(nextRank)) {
+  } else if (net <= -threshold && canDemote(nextRank)) {
     nextRank = demoteRank(nextRank);
     wins = 0;
     losses = 0;
-  } else {
-    // Bound counters when rank cannot move in that direction.
-    if (!canPromote(nextRank)) wins = Math.min(wins, threshold);
-    if (!canDemote(nextRank)) losses = Math.min(losses, threshold);
   }
 
   return {
