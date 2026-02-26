@@ -182,6 +182,7 @@ const pickFallbackAiMove = (boardState, team) => {
 
 const Board = ({ 
     gameMode, // 'ai', 'online', 'replay'
+    friendlyMatchId,
     replayHistory, // for replay mode
     viewTeam, setViewTeam, 
     invertColor, setInvertColor, 
@@ -246,11 +247,13 @@ const Board = ({
   const [showResignModal, setShowResignModal] = useState(false);
   const [showMatchCancelledModal, setShowMatchCancelledModal] = useState(false);
   const [showMatchStartModal, setShowMatchStartModal] = useState(false);
+  const [isRegisteringVillain, setIsRegisteringVillain] = useState(false);
   const [pendingSetupState, setPendingSetupState] = useState(null);
   const [matchReadyTimeLeftMs, setMatchReadyTimeLeftMs] = useState(MATCH_READY_AUTO_CONFIRM_MS);
   const [onlineClockPayload, setOnlineClockPayload] = useState(null);
   const [clockNowMs, setClockNowMs] = useState(Date.now());
   const aiReplaySavedRef = useRef(false);
+  const isNetworkGame = gameMode === 'online' || gameMode === 'friendly';
 
   const showToast = useCallback((message) => {
     if (!message) return;
@@ -365,7 +368,7 @@ const Board = ({
   useEffect(() => {
     if (gameMode === 'replay') return;
 
-    if (gameMode === 'online') {
+    if (isNetworkGame) {
         if (!token) {
             navigate('/login');
             return;
@@ -383,14 +386,16 @@ const Board = ({
         aiReplaySavedRef.current = false;
         onlineFinishRequestedRef.current = false;
         setOnlineClockPayload(null);
-        
-        // Request Match
-        if (user) {
-            socket.emit('find_match', user);
-        } else {
-            console.error("User not authenticated in Board");
+        const friendlyMatchIdValue = gameMode === 'friendly'
+          ? (typeof friendlyMatchId === 'string' ? friendlyMatchId.trim() : '')
+          : '';
+        if (gameMode === 'friendly' && !friendlyMatchIdValue) {
+          showToast(tRef.current('social.friendlyInviteFailed'));
+          navigate('/social');
+          socket.disconnect();
+          return;
         }
-
+        
         socket.on('match_found', (data) => {
             // data: { room, team, opponent }
             cancelMatchRef.current = false;
@@ -489,6 +494,27 @@ const Board = ({
              }
         });
 
+        // Request Match
+        if (gameMode === 'friendly') {
+            socket.emit('join_friendly_match', { matchId: friendlyMatchIdValue }, (response = {}) => {
+              if (response.ok) return;
+
+              const error = String(response.error || '');
+              if (error === 'MATCH_NOT_FOUND') {
+                showToast(tRef.current('social.friendlyInviteFailed'));
+              } else if (error === 'NOT_ALLOWED') {
+                showToast(tRef.current('social.blockedCannotInvite'));
+              } else {
+                showToast(tRef.current('social.friendlyInviteFailed'));
+              }
+              navigate('/social');
+            });
+        } else if (user) {
+            socket.emit('find_match', user);
+        } else {
+            console.error("User not authenticated in Board");
+        }
+
         return () => {
             const preGameStates = ['MATCHING', 'MATCH_FOUND', 'SETUP_HAN', 'SETUP_CHO', 'WAITING_HAN', 'WAITING_CHO'];
             if (
@@ -550,18 +576,18 @@ const Board = ({
         setGameState('SETUP_HAN');
         setMyTeam(null);
     }
-  }, [gameMode, navigate, resetOnlineMatchState, token]);
+  }, [friendlyMatchId, gameMode, isNetworkGame, navigate, resetOnlineMatchState, showToast, token, user]);
 
-  // Trigger Game Start when setups are ready (Online)
+  // Trigger Game Start when setups are ready (Network)
   useEffect(() => {
-      if (gameMode === 'online' && hanSetup && choSetup && gameState !== 'PLAYING') {
+      if (isNetworkGame && hanSetup && choSetup && gameState !== 'PLAYING') {
           setSetupTimeLeft(SETUP_SELECTION_TIMEOUT_SECONDS);
           startGame(hanSetup, choSetup);
       }
-  }, [hanSetup, choSetup, gameMode, gameState]);
+  }, [hanSetup, choSetup, gameState, isNetworkGame]);
 
   useEffect(() => {
-    const isOnlineSetupPhase = gameMode === 'online' && (
+    const isOnlineSetupPhase = isNetworkGame && (
       gameState === 'SETUP_HAN' ||
       gameState === 'SETUP_CHO' ||
       gameState === 'WAITING_HAN' ||
@@ -578,14 +604,14 @@ const Board = ({
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [gameMode, gameState]);
+  }, [gameState, isNetworkGame]);
 
   useEffect(() => {
     const isMyOnlineSetupTurn =
-      gameMode === 'online' && (gameState === 'SETUP_HAN' || gameState === 'SETUP_CHO');
+      isNetworkGame && (gameState === 'SETUP_HAN' || gameState === 'SETUP_CHO');
     if (!isMyOnlineSetupTurn || setupTimeLeft > 0) return;
     cancelOnlineMatch('setup_timeout');
-  }, [cancelOnlineMatch, gameMode, gameState, setupTimeLeft]);
+  }, [cancelOnlineMatch, gameState, isNetworkGame, setupTimeLeft]);
 
   const handleAiSideSelect = (team) => {
       if (gameMode !== 'ai' || gameState !== 'SELECT_SIDE') return;
@@ -608,7 +634,7 @@ const Board = ({
 
 
   const handleSetupSelect = (type) => {
-      if (gameMode === 'online') {
+      if (isNetworkGame) {
           if (gameState === 'SETUP_HAN') {
               // I am Han
               setHanSetup(type);
@@ -659,7 +685,7 @@ const Board = ({
       setGameStartedAt(new Date().toISOString());
       aiReplaySavedRef.current = false;
       onlineFinishRequestedRef.current = false;
-      if (gameMode === 'online') {
+      if (isNetworkGame) {
         setOnlineClockPayload(normalizeClockPayload({
           nextTurn: TEAM.CHO,
           updatedAt: Date.now(),
@@ -778,7 +804,7 @@ const Board = ({
             setWinner(winnerTeam);
             setGameResultMethod(RESULT_METHOD.CHECKMATE);
             
-            if (gameMode === 'online' && myTeam && turn === myTeam && !onlineFinishRequestedRef.current) {
+            if (isNetworkGame && myTeam && turn === myTeam && !onlineFinishRequestedRef.current) {
                  onlineFinishRequestedRef.current = true;
                  socket.emit('checkmate', { room, winner: winnerTeam, history: historyRef.current });
             }
@@ -795,11 +821,11 @@ const Board = ({
     if (toastKey) {
       showToast(t(toastKey));
     }
-    if (gameMode === 'online' && room && !onlineFinishRequestedRef.current) {
+    if (isNetworkGame && room && !onlineFinishRequestedRef.current) {
       onlineFinishRequestedRef.current = true;
       socket.emit('finish_by_rule', { room, winner: winnerTeam, type: 'score' });
     }
-  }, [gameMode, room, showToast, t]);
+  }, [isNetworkGame, room, showToast, t]);
 
   useEffect(() => {
     if (gameState !== 'PLAYING' || gameMode === 'replay' || winner) return;
@@ -850,13 +876,13 @@ const Board = ({
     if (gameMode === 'replay') return;
     if (gameState !== 'PLAYING' || winner) return;
     
-    if (gameMode === 'online' && myTeam && turn !== myTeam) return;
+    if (isNetworkGame && myTeam && turn !== myTeam) return;
     if (gameMode === 'ai' && (!myTeam || turn !== myTeam)) return;
 
     if (selectedPos) {
       const isMove = validMoves.some(m => m.r === r && m.c === c);
       if (isMove) {
-        if (gameMode === 'online') {
+        if (isNetworkGame) {
             socket.emit('move', { room, move: { from: selectedPos, to: { r, c } } });
         }
         applyMove(selectedPos, { r, c }, true);
@@ -866,7 +892,7 @@ const Board = ({
 
     const piece = board[r][c];
     if (piece && piece.team === turn) {
-        if (gameMode === 'online' && myTeam && piece.team !== myTeam) return;
+        if (isNetworkGame && myTeam && piece.team !== myTeam) return;
         if (gameMode === 'ai' && (!myTeam || piece.team !== myTeam)) return;
 
       setSelectedPos({ r, c });
@@ -903,7 +929,7 @@ const Board = ({
   };
 
   const handleReset = () => {
-      if (gameMode !== 'online') {
+      if (!isNetworkGame) {
           setBoard(generateBoard(choSetup || SETUP_TYPES.MSMS, hanSetup || SETUP_TYPES.MSMS));
           setTurn(TEAM.CHO);
           setHistory([]);
@@ -925,7 +951,7 @@ const Board = ({
 
   const handleUndo = () => {
       // ... (keep handling undo)
-      if (gameMode === 'online') return;
+      if (isNetworkGame) return;
       if (history.length === 0) return;
       let stepsToUndo = 1;
       if (gameMode === 'ai' && myTeam && turn === myTeam && history.length >= 2) {
@@ -988,7 +1014,7 @@ const Board = ({
 
   const handleConfirmResign = () => {
       setShowResignModal(false);
-      if (gameMode === 'online') {
+      if (isNetworkGame) {
           onlineFinishRequestedRef.current = true;
           socket.emit('resign', { room, team: myTeam, history: historyRef.current });
       } else {
@@ -1048,7 +1074,13 @@ const Board = ({
       }
   };
 
-  const modeLabel = gameMode === 'online' ? t('board.mode.online') : gameMode === 'replay' ? t('board.mode.replay') : t('board.mode.ai');
+  const modeLabel = gameMode === 'online'
+    ? t('board.mode.online')
+    : gameMode === 'friendly'
+      ? t('board.mode.friendly')
+      : gameMode === 'replay'
+        ? t('board.mode.replay')
+        : t('board.mode.ai');
   const displayMoveCount = gameMode === 'replay' ? Math.max((replayHistory?.length || 1) - 1, 0) : history.length;
   const CAPTURE_DISPLAY_ORDER = [
     PIECE_TYPE.CHARIOT,
@@ -1120,33 +1152,54 @@ const Board = ({
   const bottomTeam = viewTeam === TEAM.HAN ? TEAM.HAN : TEAM.CHO;
 
   const [showSettings, setShowSettings] = useState(false);
-  const [playerPopupInfo, setPlayerPopupInfo] = useState(null); // { name, rank, wins, losses, rating, isAi }
+  const [playerPopupInfo, setPlayerPopupInfo] = useState(null); // { userId, name, rank, wins, losses, rating, isAi, isMe }
 
   const handlePlayerClick = (isMe) => {
     if (isMe) {
       if (!user) return;
       setPlayerPopupInfo({
+        userId: user.id,
         name: user.nickname || t('board.me'),
         rank: user.rank || '18급',
         wins: user.wins || 0,
         losses: user.losses || 0,
         rating: user.rating || 1000,
         isAi: false,
+        isMe: true,
       });
     } else {
       if (gameMode === 'ai') {
-        setPlayerPopupInfo({ name: 'AI', rank: '-', wins: 0, losses: 0, rating: null, isAi: true });
+        setPlayerPopupInfo({ userId: null, name: 'AI', rank: '-', wins: 0, losses: 0, rating: null, isAi: true, isMe: false });
         return;
       }
       if (!opponentInfo) return;
       setPlayerPopupInfo({
+        userId: opponentInfo.id,
         name: opponentInfo.nickname || t('board.opponent'),
         rank: opponentInfo.rank || '18급',
         wins: opponentInfo.wins || 0,
         losses: opponentInfo.losses || 0,
         rating: opponentInfo.rating || 1000,
         isAi: false,
+        isMe: false,
       });
+    }
+  };
+
+  const handleRegisterVillain = async () => {
+    const targetUserId = Number(playerPopupInfo?.userId);
+    if (!Number.isInteger(targetUserId) || targetUserId <= 0) return;
+    if (isRegisteringVillain) return;
+
+    setIsRegisteringVillain(true);
+    try {
+      await axios.post('/api/social/villains', { targetUserId });
+      showToast(t('board.alerts.villainAdded'));
+      setPlayerPopupInfo(null);
+    } catch (_err) {
+      showToast(t('board.alerts.villainAddFailed'));
+    } finally {
+      setIsRegisteringVillain(false);
     }
   };
 
@@ -1155,7 +1208,7 @@ const Board = ({
     cancelOnlineMatch('user_cancel');
   };
   const handleSetupClose = () => {
-    if (gameMode === 'online') {
+    if (isNetworkGame) {
       cancelOnlineMatch('user_cancel');
       return;
     }
@@ -1163,7 +1216,7 @@ const Board = ({
   };
   const handleCloseMatchCancelledModal = () => {
     setShowMatchCancelledModal(false);
-    navigate('/');
+    navigate(gameMode === 'friendly' ? '/social' : '/');
   };
   const handleConfirmMatchStart = useCallback(() => {
     if (!pendingSetupState) return;
@@ -1200,19 +1253,19 @@ const Board = ({
   }, [handleConfirmMatchStart, isMatchReadyModalVisible]);
 
   useEffect(() => {
-    if (gameMode !== 'online' || gameState !== 'PLAYING' || !onlineClockPayload || winner) return;
+    if (!isNetworkGame || gameState !== 'PLAYING' || !onlineClockPayload || winner) return;
     setClockNowMs(Date.now());
     const timer = setInterval(() => {
       setClockNowMs(Date.now());
     }, 200);
     return () => clearInterval(timer);
-  }, [gameMode, gameState, onlineClockPayload, winner]);
+  }, [gameState, isNetworkGame, onlineClockPayload, winner]);
 
   const setupProgressPercent = Math.max((setupTimeLeft / SETUP_SELECTION_TIMEOUT_SECONDS) * 100, 0);
   const isOnlineSetupTurn =
-    gameMode === 'online' && (gameState === 'SETUP_HAN' || gameState === 'SETUP_CHO');
+    isNetworkGame && (gameState === 'SETUP_HAN' || gameState === 'SETUP_CHO');
   const isOnlineSetupWaiting =
-    gameMode === 'online' && (gameState === 'WAITING_HAN' || gameState === 'WAITING_CHO');
+    isNetworkGame && (gameState === 'WAITING_HAN' || gameState === 'WAITING_CHO');
   const waitingSetupMessage = gameState === 'WAITING_HAN'
     ? t('board.waitingHan')
     : gameState === 'WAITING_CHO'
@@ -1241,7 +1294,7 @@ const Board = ({
   const resultSummaryText = didIWin
     ? t('board.resultWin', { method: resultMethodLabel })
     : t('board.resultLoss', { method: resultMethodLabel });
-  const projectedOnlineClocks = gameMode === 'online' && onlineClockPayload
+  const projectedOnlineClocks = isNetworkGame && onlineClockPayload
     ? projectClockPayload(onlineClockPayload, clockNowMs)
     : null;
   const getOnlineClockLabel = (team) => {
@@ -1587,10 +1640,10 @@ const Board = ({
                     </div>
                     <div className="game-player-text">
                         <span className="game-player-name">
-                            {gameMode === 'online' ? (opponentInfo?.nickname || t('board.opponent')) : (gameMode === 'ai' ? 'AI' : t('board.opponent'))}
+                            {isNetworkGame ? (opponentInfo?.nickname || t('board.opponent')) : (gameMode === 'ai' ? 'AI' : t('board.opponent'))}
                         </span>
                         <span className="game-player-score">{topTeam === TEAM.CHO ? scores.cho : scores.han}{t('board.pointUnit')}</span>
-                        {gameMode === 'online' && topClockLabel && (
+                        {isNetworkGame && topClockLabel && (
                           <span className={`game-player-clock ${topClockLabel.critical ? 'critical' : ''}`}>{topClockLabel.text}</span>
                         )}
                     </div>
@@ -1615,7 +1668,7 @@ const Board = ({
                             {user?.nickname || t('board.me')}
                         </span>
                         <span className="game-player-score">{bottomTeam === TEAM.CHO ? scores.cho : scores.han}{t('board.pointUnit')}</span>
-                        {gameMode === 'online' && bottomClockLabel && (
+                        {isNetworkGame && bottomClockLabel && (
                           <span className={`game-player-clock ${bottomClockLabel.critical ? 'critical' : ''}`}>{bottomClockLabel.text}</span>
                         )}
                     </div>
@@ -1668,6 +1721,16 @@ const Board = ({
                                         <span className="player-popup-rating-value">{playerPopupInfo.rating}</span>
                                     </div>
                                 )}
+                                {!playerPopupInfo.isMe && gameMode !== 'replay' && (
+                                    <button
+                                        type="button"
+                                        className="player-popup-villain-btn"
+                                        onClick={handleRegisterVillain}
+                                        disabled={isRegisteringVillain}
+                                    >
+                                        {t('board.popup.registerVillain')}
+                                    </button>
+                                )}
                             </>
                         )}
                     </div>
@@ -1687,7 +1750,7 @@ const Board = ({
                             <span>{t('board.next')}</span>
                         </button>
                     </>
-                ) : gameMode === 'online' ? (
+                ) : isNetworkGame ? (
                     <>
                         <button className="game-action-btn" onClick={handleOnlinePass} disabled={turn !== myTeam}>
                             <span className="material-icons-round">skip_next</span>
@@ -1729,7 +1792,7 @@ const Board = ({
                         {resultSummaryText}
                     </div>
                     <div className="game-result-actions">
-                        {gameMode !== 'online' && gameMode !== 'replay' && (
+                        {!isNetworkGame && gameMode !== 'replay' && (
                             <button className="game-result-btn secondary" onClick={() => window.location.reload()}>
                                 {t('board.playAgain')}
                             </button>

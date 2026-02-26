@@ -1430,6 +1430,29 @@
   color: #fff;
 }
 
+.player-popup-villain-btn {
+  width: 100%;
+  margin-top: 12px;
+  border: none;
+  border-radius: 14px;
+  padding: 12px 14px;
+  background: linear-gradient(135deg, #dc2626, #b91c1c);
+  color: #fff;
+  font-size: 0.95rem;
+  font-weight: 800;
+  cursor: pointer;
+  transition: filter 0.2s ease;
+}
+
+.player-popup-villain-btn:hover:not(:disabled) {
+  filter: brightness(1.06);
+}
+
+.player-popup-villain-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 /* Make player info areas look clickable */
 .game-player-info {
   cursor: pointer;

@@ -7,6 +7,8 @@ import GamePage from './pages/GamePage';
 import ReplayList from './pages/ReplayList';
 import ReplayPage from './pages/ReplayPage';
 import Profile from './pages/Profile';
+import SocialPage from './pages/SocialPage';
+import FriendReplayList from './pages/FriendReplayList';
 import { useLanguage } from './context/LanguageContext';
 import './App.css';
 
@@ -65,6 +67,16 @@ function App() {
                     <Route path="/profile" element={
                         <ProtectedRoute>
                             <Profile />
+                        </ProtectedRoute>
+                    } />
+                    <Route path="/social" element={
+                        <ProtectedRoute>
+                            <SocialPage />
+                        </ProtectedRoute>
+                    } />
+                    <Route path="/social/friend/:friendId/records" element={
+                        <ProtectedRoute>
+                            <FriendReplayList />
                         </ProtectedRoute>
                     } />
                 </Routes>

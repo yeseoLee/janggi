@@ -5,7 +5,8 @@ import { TEAM } from '../game/constants';
 
 function GamePage() {
   const [searchParams] = useSearchParams();
-  const mode = searchParams.get('mode') || 'ai'; // 'ai' or 'online'
+  const mode = searchParams.get('mode') || 'ai'; // 'ai', 'online', 'friendly'
+  const friendlyMatchId = searchParams.get('matchId') || '';
   
   const [viewTeam, setViewTeam] = useState(TEAM.CHO);
   const [invertColor, setInvertColor] = useState(false);
@@ -15,6 +16,7 @@ function GamePage() {
   return (
       <Board 
         gameMode={mode}
+        friendlyMatchId={friendlyMatchId}
         viewTeam={viewTeam}
         setViewTeam={setViewTeam}
         invertColor={invertColor}

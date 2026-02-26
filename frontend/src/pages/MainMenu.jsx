@@ -1,20 +1,33 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate, Link } from 'react-router-dom';
 import axios from 'axios';
 import { useLanguage } from '../context/LanguageContext';
 import BottomNav from '../components/BottomNav';
 import { normalizeResultMethod } from '../game/result';
+import { useFriendlyMatchSocket } from '../hooks/useFriendlyMatchSocket';
 
 function MainMenu() {
-  const { user, logout, refreshUser } = useAuth();
+  const { user, refreshUser } = useAuth();
   const navigate = useNavigate();
   const { t } = useLanguage();
   const [toastMessage, setToastMessage] = useState('');
   const [isStartingAi, setIsStartingAi] = useState(false);
   const [recentGames, setRecentGames] = useState([]);
   const [matchRequestType, setMatchRequestType] = useState(null);
+  const [showFriendlyPicker, setShowFriendlyPicker] = useState(false);
+  const [friends, setFriends] = useState([]);
+  const [loadingFriends, setLoadingFriends] = useState(false);
   const toastTimerRef = useRef(null);
+  const {
+    pendingInvite,
+    matchReady,
+    sendInvite,
+    acceptInvite,
+    declineInvite,
+    clearPendingInvite,
+    clearMatchReady,
+  } = useFriendlyMatchSocket();
 
   useEffect(() => {
     return () => {
@@ -30,11 +43,29 @@ function MainMenu() {
     }
   }, [user]);
 
-  const showToast = (message) => {
+  const showToast = useCallback((message) => {
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
     setToastMessage(message);
     toastTimerRef.current = setTimeout(() => setToastMessage(''), 2200);
-  };
+  }, []);
+
+  const loadFriends = useCallback(async () => {
+    setLoadingFriends(true);
+    try {
+      const response = await axios.get('/api/social/friends');
+      setFriends(response.data || []);
+    } catch (_err) {
+      showToast(t('social.loadFriendsFailed'));
+      setFriends([]);
+    } finally {
+      setLoadingFriends(false);
+    }
+  }, [showToast, t]);
+
+  useEffect(() => {
+    if (!showFriendlyPicker || !user) return;
+    loadFriends();
+  }, [loadFriends, showFriendlyPicker, user]);
 
   const handleAiMatchStart = async () => {
     if (isStartingAi) return;
@@ -63,9 +94,21 @@ function MainMenu() {
     setMatchRequestType(type);
   };
 
+  const openFriendlyPicker = () => {
+    if (!user) {
+      navigate('/login');
+      return;
+    }
+    setShowFriendlyPicker(true);
+  };
+
   const closeMatchRequestModal = () => {
     if (isStartingAi) return;
     setMatchRequestType(null);
+  };
+
+  const closeFriendlyPicker = () => {
+    setShowFriendlyPicker(false);
   };
 
   const handleConfirmMatchRequest = async () => {
@@ -79,6 +122,47 @@ function MainMenu() {
       setMatchRequestType(null);
       navigate('/game?mode=online');
     }
+  };
+
+  const handleSendFriendlyInvite = async (targetUserId) => {
+    const response = await sendInvite(targetUserId);
+    if (response?.ok) {
+      showToast(t('menu.friendlyInviteSent'));
+      setShowFriendlyPicker(false);
+      return;
+    }
+    if (response?.error === 'TARGET_OFFLINE') {
+      showToast(t('menu.friendlyFriendOffline'));
+      return;
+    }
+    if (response?.error === 'BLOCKED_USER') {
+      showToast(t('menu.friendlyBlocked'));
+      return;
+    }
+    showToast(t('menu.friendlyInviteFailed'));
+  };
+
+  const handleAcceptInvite = async () => {
+    if (!pendingInvite?.inviteId) return;
+    const response = await acceptInvite(pendingInvite.inviteId);
+    if (!response?.ok) {
+      showToast(t('menu.friendlyInviteAcceptFailed'));
+    }
+  };
+
+  const handleDeclineInvite = async () => {
+    if (!pendingInvite?.inviteId) {
+      clearPendingInvite();
+      return;
+    }
+    await declineInvite(pendingInvite.inviteId);
+  };
+
+  const handleStartFriendlyMatch = () => {
+    if (!matchReady?.matchId) return;
+    const matchId = matchReady.matchId;
+    clearMatchReady();
+    navigate(`/game?mode=friendly&matchId=${matchId}`);
   };
 
   const winRate = user && (user.wins + user.losses > 0)
@@ -222,6 +306,16 @@ function MainMenu() {
             <span className="match-btn-title">{t('menu.aiMatchShort')}</span>
             <span className="match-btn-subtitle">{t('menu.aiMatchSub')}</span>
           </button>
+          <button className="match-btn solo" onClick={() => showToast(t('menu.soloComingSoon'))}>
+            <span className="material-icons-round">person</span>
+            <span className="match-btn-title">{t('menu.soloPlayShort')}</span>
+            <span className="match-btn-subtitle">{t('menu.soloPlaySub')}</span>
+          </button>
+          <button className="match-btn friendly" onClick={openFriendlyPicker}>
+            <span className="material-icons-round">group</span>
+            <span className="match-btn-title">{t('menu.friendlyMatchShort')}</span>
+            <span className="match-btn-subtitle">{t('menu.friendlyMatchSub')}</span>
+          </button>
           <button className="match-btn online" onClick={() => openMatchRequestModal('online')}>
             <span className="material-icons-round">sports_esports</span>
             <span className="match-btn-title">{t('menu.onlineMatchShort')}</span>
@@ -282,6 +376,80 @@ function MainMenu() {
                 disabled={matchRequestType === 'ai' && isStartingAi}
               >
                 {t('common.yes')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showFriendlyPicker && (
+        <div className="menu-confirm-overlay" onClick={closeFriendlyPicker}>
+          <div className="menu-confirm-card menu-friend-picker-card" onClick={(e) => e.stopPropagation()}>
+            <div className="menu-confirm-title">{t('menu.friendlyMatchSelectFriend')}</div>
+            <div className="menu-friend-picker-list">
+              {loadingFriends && (
+                <div className="menu-friend-picker-empty">{t('replay.loading')}</div>
+              )}
+              {!loadingFriends && friends.length === 0 && (
+                <div className="menu-friend-picker-empty">
+                  <span>{t('menu.friendlyNoFriends')}</span>
+                  <button type="button" className="menu-friend-picker-link" onClick={() => { closeFriendlyPicker(); navigate('/social'); }}>
+                    {t('menu.friendlyOpenSocial')}
+                  </button>
+                </div>
+              )}
+              {!loadingFriends && friends.map((friend) => (
+                <div className="menu-friend-picker-row" key={friend.id}>
+                  <div className="menu-friend-picker-main">
+                    <strong>{friend.nickname}</strong>
+                    <span>{friend.rank || '-'} · {friend.rating ?? '-'}</span>
+                  </div>
+                  <button
+                    type="button"
+                    className="menu-confirm-btn primary"
+                    onClick={() => handleSendFriendlyInvite(friend.id)}
+                  >
+                    {t('social.requestFriendly')}
+                  </button>
+                </div>
+              ))}
+            </div>
+            <div className="menu-confirm-actions">
+              <button className="menu-confirm-btn secondary" style={{ gridColumn: '1 / -1' }} onClick={closeFriendlyPicker}>
+                {t('common.no')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {pendingInvite && (
+        <div className="menu-confirm-overlay" onClick={handleDeclineInvite}>
+          <div className="menu-confirm-card" onClick={(e) => e.stopPropagation()}>
+            <div className="menu-confirm-title">
+              {t('menu.friendlyInviteReceived', { nickname: pendingInvite.from?.nickname || '-' })}
+            </div>
+            <div className="menu-confirm-actions">
+              <button className="menu-confirm-btn secondary" type="button" onClick={handleDeclineInvite}>
+                {t('common.no')}
+              </button>
+              <button className="menu-confirm-btn primary" type="button" onClick={handleAcceptInvite}>
+                {t('common.yes')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {matchReady && (
+        <div className="menu-confirm-overlay" onClick={handleStartFriendlyMatch}>
+          <div className="menu-confirm-card" onClick={(e) => e.stopPropagation()}>
+            <div className="menu-confirm-title">
+              {t('menu.friendlyMatchReady', { nickname: matchReady.opponent?.nickname || '-' })}
+            </div>
+            <div className="menu-confirm-actions">
+              <button className="menu-confirm-btn primary" style={{ gridColumn: '1 / -1' }} type="button" onClick={handleStartFriendlyMatch}>
+                {t('menu.friendlyStartNow')}
               </button>
             </div>
           </div>

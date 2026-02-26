@@ -23,6 +23,7 @@ function BottomNav() {
   };
 
   const isActive = (target) => path === target;
+  const isActivePrefix = (prefix) => path === prefix || path.startsWith(`${prefix}/`);
 
   return (
     <>
@@ -50,6 +51,14 @@ function BottomNav() {
           >
             <span className="material-icons-round">history</span>
             <span>{t('nav.records')}</span>
+          </button>
+
+          <button
+            className={`bottom-nav-item ${isActivePrefix('/social') ? 'active' : ''}`}
+            onClick={() => navigate('/social')}
+          >
+            <span className="material-icons-round">groups</span>
+            <span>{t('nav.social')}</span>
           </button>
 
           <button

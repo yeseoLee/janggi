@@ -558,6 +558,19 @@
   color: var(--color-cho);
 }
 
+.match-btn.solo .material-icons-round {
+  color: #6b7280;
+}
+
+.match-btn.friendly {
+  background: #fff7ed;
+  border-color: #fed7aa;
+}
+
+.match-btn.friendly .material-icons-round {
+  color: #d97706;
+}
+
 .match-btn.online {
   background: var(--color-primary);
   color: white;
@@ -637,6 +650,71 @@
 .menu-confirm-btn:disabled {
   opacity: 0.6;
   cursor: not-allowed;
+}
+
+.menu-friend-picker-card {
+  width: min(92vw, 520px);
+}
+
+.menu-friend-picker-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: min(46vh, 340px);
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.menu-friend-picker-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border: 1px solid var(--color-border-light);
+  border-radius: 12px;
+  padding: 10px 12px;
+  background: #fff;
+}
+
+.menu-friend-picker-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.menu-friend-picker-main strong {
+  font-size: 0.92rem;
+  color: var(--color-text);
+}
+
+.menu-friend-picker-main span {
+  font-size: 0.78rem;
+  color: var(--color-text-muted);
+}
+
+.menu-friend-picker-empty {
+  min-height: 100px;
+  border: 1px dashed var(--color-border);
+  border-radius: 12px;
+  background: #fff;
+  color: var(--color-text-muted);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  text-align: center;
+}
+
+.menu-friend-picker-link {
+  border: none;
+  background: none;
+  color: var(--color-primary);
+  font-size: 0.86rem;
+  font-weight: 700;
+  cursor: pointer;
 }
 
 /* Recent Records */
@@ -1046,6 +1124,154 @@
 
 .record-card-arrow .material-icons-round {
   font-size: 22px;
+}
+
+/* ===== Social Page ===== */
+.social-page {
+  flex: 1;
+  padding: 16px 16px 100px;
+  max-width: 560px;
+  margin: 0 auto;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.social-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.social-tab {
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text-secondary);
+  border-radius: 12px;
+  padding: 10px;
+  font-size: 0.9rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.social-tab.active {
+  border-color: #f59e0b;
+  background: #fff7ed;
+  color: #9a3412;
+}
+
+.social-search-card,
+.social-list-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-light);
+  border-radius: 16px;
+  box-shadow: var(--shadow-sm);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.social-list-card h3 {
+  margin: 0;
+  font-size: 0.95rem;
+  color: var(--color-text-secondary);
+}
+
+.social-search-row {
+  display: flex;
+  gap: 8px;
+}
+
+.social-search-row input {
+  flex: 1;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 0.9rem;
+}
+
+.social-search-row button {
+  border: none;
+  border-radius: 10px;
+  padding: 0 14px;
+  background: linear-gradient(135deg, #d97726, #b45309);
+  color: #fff;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.social-search-results {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 2px;
+}
+
+.social-person-row {
+  border: 1px solid var(--color-border-light);
+  border-radius: 12px;
+  padding: 10px 12px;
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.social-person-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 2px;
+}
+
+.social-person-main strong {
+  font-size: 0.94rem;
+  color: var(--color-text);
+}
+
+.social-person-main span {
+  font-size: 0.78rem;
+  color: var(--color-text-muted);
+}
+
+.social-person-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.social-btn {
+  border: none;
+  border-radius: 9px;
+  padding: 7px 10px;
+  background: #e5e7eb;
+  color: #374151;
+  font-size: 0.76rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.social-btn.primary {
+  background: linear-gradient(135deg, #f59e0b, #d97706);
+  color: #fff;
+}
+
+.social-btn.danger {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.social-badge {
+  font-size: 0.72rem;
+  color: #6b7280;
+  background: #f3f4f6;
+  border-radius: 999px;
+  padding: 5px 8px;
+  font-weight: 700;
 }
 
 /* ===== Profile Page ===== */
