@@ -29,6 +29,7 @@
   --color-wood-dark: #D4A66A;
 
   --color-gold: #D97706;
+  --app-shell-max-width: 560px;
 
   /* Typography */
   --font-display: 'Noto Serif KR', serif;

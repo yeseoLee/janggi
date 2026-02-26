@@ -43,6 +43,33 @@ const getSafeNonNegativeInt = (value, fallback = 0) => {
   return Math.max(0, parsed);
 };
 
+const toSafeTimestampMs = (value, fallback = 0) => {
+  const numeric = Number(value);
+  if (Number.isFinite(numeric) && numeric > 0) return Math.floor(numeric);
+
+  const parsed = new Date(value).getTime();
+  if (Number.isFinite(parsed) && parsed > 0) return parsed;
+  return fallback;
+};
+
+const normalizeSetupTimerPayload = (payload) => {
+  const team = payload?.team === TEAM.HAN ? TEAM.HAN : (payload?.team === TEAM.CHO ? TEAM.CHO : null);
+  if (!team) return null;
+
+  const startedAtMs = toSafeTimestampMs(payload?.startedAt, 0);
+  const deadlineAtMs = toSafeTimestampMs(payload?.deadlineAt, 0);
+  const durationMs = getSafePositiveMs(payload?.durationMs, SETUP_SELECTION_TIMEOUT_SECONDS * 1000);
+
+  if (startedAtMs <= 0 || deadlineAtMs <= 0 || deadlineAtMs < startedAtMs) return null;
+
+  return {
+    team,
+    startedAtMs,
+    deadlineAtMs,
+    durationMs,
+  };
+};
+
 const normalizeClockPayload = (payload) => {
   const baseByoyomiMs = getSafePositiveMs(payload?.timeControl?.byoyomiMs, BYOYOMI_TIME_MS);
   const normalizeTeamClock = (clock = {}) => ({
@@ -220,6 +247,8 @@ const Board = ({
   const gameStateRef = useRef(gameState);
   const cancelMatchRef = useRef(false);
   const [setupTimeLeft, setSetupTimeLeft] = useState(SETUP_SELECTION_TIMEOUT_SECONDS);
+  const [setupTimerSync, setSetupTimerSync] = useState(null);
+  const [setupTimerNowMs, setSetupTimerNowMs] = useState(Date.now());
 
   // States
   const [history, setHistory] = useState([]);
@@ -299,6 +328,8 @@ const Board = ({
     myTeamRef.current = null;
     setOpponentInfo(null);
     setSetupTimeLeft(SETUP_SELECTION_TIMEOUT_SECONDS);
+    setSetupTimerSync(null);
+    setSetupTimerNowMs(Date.now());
     setShowMatchStartModal(false);
     setPendingSetupState(null);
     setGameResultMethod(null);
@@ -337,6 +368,8 @@ const Board = ({
       aiReplaySavedRef.current = false;
       onlineFinishRequestedRef.current = false;
       setOnlineClockPayload(null);
+      setSetupTimerSync(null);
+      setSetupTimerNowMs(Date.now());
       setWinner(null);
       setGameResultMethod(null);
       setCheckAlert(null);
@@ -355,6 +388,8 @@ const Board = ({
       aiReplaySavedRef.current = false;
       onlineFinishRequestedRef.current = false;
       setOnlineClockPayload(null);
+      setSetupTimerSync(null);
+      setSetupTimerNowMs(Date.now());
       setWinner(null);
       setGameResultMethod(null);
       setCheckAlert(null);
@@ -378,6 +413,8 @@ const Board = ({
         cancelMatchRef.current = false;
         setGameState('MATCHING');
         setSetupTimeLeft(SETUP_SELECTION_TIMEOUT_SECONDS);
+        setSetupTimerSync(null);
+        setSetupTimerNowMs(Date.now());
         setShowMatchCancelledModal(false);
         setShowMatchStartModal(false);
         setPendingSetupState(null);
@@ -404,6 +441,8 @@ const Board = ({
             myTeamRef.current = data.team; // Update ref
             setOpponentInfo(data.opponent);
             setSetupTimeLeft(SETUP_SELECTION_TIMEOUT_SECONDS);
+            setSetupTimerSync(normalizeSetupTimerPayload(data.setupTimer));
+            setSetupTimerNowMs(Date.now());
             const initialSetupState = data.team === TEAM.HAN ? 'SETUP_HAN' : 'WAITING_HAN';
             setPendingSetupState(initialSetupState);
             setShowMatchStartModal(true);
@@ -456,6 +495,11 @@ const Board = ({
         socket.on('clock_sync', (payload) => {
              setOnlineClockPayload(normalizeClockPayload(payload));
              setClockNowMs(Date.now());
+        });
+
+        socket.on('setup_timer_sync', (payload) => {
+             setSetupTimerSync(normalizeSetupTimerPayload(payload));
+             setSetupTimerNowMs(Date.now());
         });
 
         socket.on('game_over', (data) => {
@@ -529,6 +573,7 @@ const Board = ({
             socket.off('move');
             socket.off('pass_turn');
             socket.off('clock_sync');
+            socket.off('setup_timer_sync');
             socket.off('game_over');
             socket.off('match_cancelled');
             socket.disconnect();
@@ -548,6 +593,8 @@ const Board = ({
         aiReplaySavedRef.current = false;
         onlineFinishRequestedRef.current = false;
         setOnlineClockPayload(null);
+        setSetupTimerSync(null);
+        setSetupTimerNowMs(Date.now());
         setWinner(null);
         setGameResultMethod(null);
         setSelectedPos(null);
@@ -573,6 +620,8 @@ const Board = ({
         aiReplaySavedRef.current = false;
         onlineFinishRequestedRef.current = false;
         setOnlineClockPayload(null);
+        setSetupTimerSync(null);
+        setSetupTimerNowMs(Date.now());
         setGameState('SETUP_HAN');
         setMyTeam(null);
     }
@@ -598,13 +647,24 @@ const Board = ({
       return;
     }
 
-    setSetupTimeLeft(SETUP_SELECTION_TIMEOUT_SECONDS);
-    const timer = setInterval(() => {
-      setSetupTimeLeft((prev) => Math.max(prev - 1, 0));
-    }, 1000);
+    const deadlineAtMs = Number(setupTimerSync?.deadlineAtMs);
+    if (!Number.isFinite(deadlineAtMs) || deadlineAtMs <= 0) {
+      setSetupTimeLeft(SETUP_SELECTION_TIMEOUT_SECONDS);
+      return;
+    }
 
+    const updateFromServerDeadline = () => {
+      const nowMs = Date.now();
+      setSetupTimerNowMs(nowMs);
+      const remainingMs = Math.max(deadlineAtMs - nowMs, 0);
+      const remainingSeconds = Math.max(0, Math.ceil(remainingMs / 1000));
+      setSetupTimeLeft(remainingSeconds);
+    };
+
+    updateFromServerDeadline();
+    const timer = setInterval(updateFromServerDeadline, 200);
     return () => clearInterval(timer);
-  }, [gameState, isNetworkGame]);
+  }, [gameState, isNetworkGame, setupTimerSync]);
 
   useEffect(() => {
     const isMyOnlineSetupTurn =
@@ -702,6 +762,8 @@ const Board = ({
       } else {
         setOnlineClockPayload(null);
       }
+      setSetupTimerSync(null);
+      setSetupTimerNowMs(Date.now());
       setWinner(null);
       setGameResultMethod(null);
       setSelectedPos(null);
@@ -1222,8 +1284,17 @@ const Board = ({
     if (!pendingSetupState) return;
     setShowMatchStartModal(false);
     setGameState(pendingSetupState);
+
+    if (isNetworkGame && (pendingSetupState === 'SETUP_HAN' || pendingSetupState === 'SETUP_CHO')) {
+      const selectingTeam = pendingSetupState === 'SETUP_HAN' ? TEAM.HAN : TEAM.CHO;
+      const roomId = roomRef.current || room;
+      if (roomId && socket.connected) {
+        socket.emit('setup_phase_started', { room: roomId, team: selectingTeam });
+      }
+    }
+
     setPendingSetupState(null);
-  }, [pendingSetupState]);
+  }, [isNetworkGame, pendingSetupState, room]);
 
   const isMatchReadyModalVisible = showMatchStartModal && gameState === 'MATCH_FOUND';
 
@@ -1261,7 +1332,15 @@ const Board = ({
     return () => clearInterval(timer);
   }, [gameState, isNetworkGame, onlineClockPayload, winner]);
 
-  const setupProgressPercent = Math.max((setupTimeLeft / SETUP_SELECTION_TIMEOUT_SECONDS) * 100, 0);
+  const setupDurationMs = Math.max(
+    1000,
+    Number(setupTimerSync?.durationMs) || (SETUP_SELECTION_TIMEOUT_SECONDS * 1000),
+  );
+  const hasSetupDeadline = Number.isFinite(Number(setupTimerSync?.deadlineAtMs)) && Number(setupTimerSync?.deadlineAtMs) > 0;
+  const setupRemainingMs = hasSetupDeadline
+    ? Math.max(Number(setupTimerSync?.deadlineAtMs) - setupTimerNowMs, 0)
+    : setupTimeLeft * 1000;
+  const setupProgressPercent = Math.max((setupRemainingMs / setupDurationMs) * 100, 0);
   const isOnlineSetupTurn =
     isNetworkGame && (gameState === 'SETUP_HAN' || gameState === 'SETUP_CHO');
   const isOnlineSetupWaiting =
