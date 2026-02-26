@@ -122,6 +122,7 @@ export const translations = {
       charge: '충전',
       language: '언어 설정',
       gameRecords: '대국 기록',
+      logout: '로그아웃',
       withdraw: '회원 탈퇴',
     },
     replay: {
@@ -356,6 +357,7 @@ export const translations = {
       charge: 'Charge',
       language: 'Language',
       gameRecords: 'Game Records',
+      logout: 'Logout',
       withdraw: 'Delete Account',
     },
     replay: {

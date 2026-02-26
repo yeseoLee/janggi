@@ -211,6 +211,12 @@ function Profile() {
             </div>
             <span className="material-icons-round">chevron_right</span>
           </button>
+          <button className="profile-settings-item" onClick={logout}>
+            <div className="profile-settings-item-left">
+              <span className="material-icons-round">logout</span>
+              <span>{t('profile.logout')}</span>
+            </div>
+          </button>
           <button className="profile-settings-item danger" onClick={handleWithdraw}>
             <div className="profile-settings-item-left">
               <span className="material-icons-round">delete_forever</span>
