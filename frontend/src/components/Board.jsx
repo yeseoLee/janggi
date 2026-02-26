@@ -84,6 +84,8 @@ const Board = ({
 
   // States
   const [history, setHistory] = useState([]);
+  const [moveLog, setMoveLog] = useState([]);
+  const [gameStartedAt, setGameStartedAt] = useState(null);
   const [winner, setWinner] = useState(null);
   const [gameResultMethod, setGameResultMethod] = useState(null);
   const [checkAlert, setCheckAlert] = useState(null);
@@ -103,6 +105,7 @@ const Board = ({
   const [showMatchStartModal, setShowMatchStartModal] = useState(false);
   const [pendingSetupState, setPendingSetupState] = useState(null);
   const [matchReadyTimeLeftMs, setMatchReadyTimeLeftMs] = useState(MATCH_READY_AUTO_CONFIRM_MS);
+  const aiReplaySavedRef = useRef(false);
 
   const showToast = useCallback((message) => {
     if (!message) return;
@@ -163,6 +166,9 @@ const Board = ({
       setSelectedPos(null);
       setValidMoves([]);
       setHistory([]);
+      setMoveLog([]);
+      setGameStartedAt(null);
+      aiReplaySavedRef.current = false;
       setWinner(null);
       setGameResultMethod(null);
       setCheckAlert(null);
@@ -176,6 +182,9 @@ const Board = ({
       setSelectedPos(null);
       setValidMoves([]);
       setHistory([]);
+      setMoveLog([]);
+      setGameStartedAt(null);
+      aiReplaySavedRef.current = false;
       setWinner(null);
       setGameResultMethod(null);
       setCheckAlert(null);
@@ -202,6 +211,9 @@ const Board = ({
         setShowMatchCancelledModal(false);
         setShowMatchStartModal(false);
         setPendingSetupState(null);
+        setMoveLog([]);
+        setGameStartedAt(null);
+        aiReplaySavedRef.current = false;
         
         // Request Match
         if (user) {
@@ -258,6 +270,7 @@ const Board = ({
         socket.on('pass_turn', () => {
              showToast(tRef.current('board.alerts.opponentPassed'));
              setHistory(prev => [...prev, { board: cloneBoardState(board), turn }]);
+             setMoveLog(prev => [...prev, { type: 'pass', turn, at: new Date().toISOString() }]);
              setTurn(t => t === TEAM.CHO ? TEAM.HAN : TEAM.CHO);
         });
 
@@ -320,6 +333,9 @@ const Board = ({
         setBoard(createEmptyBoard());
         setTurn(TEAM.CHO);
         setHistory([]);
+        setMoveLog([]);
+        setGameStartedAt(null);
+        aiReplaySavedRef.current = false;
         setWinner(null);
         setGameResultMethod(null);
         setSelectedPos(null);
@@ -340,6 +356,9 @@ const Board = ({
         setShowMatchStartModal(false);
         setPendingSetupState(null);
         setGameResultMethod(null);
+        setMoveLog([]);
+        setGameStartedAt(null);
+        aiReplaySavedRef.current = false;
         setGameState('SETUP_HAN');
         setMyTeam(null);
     }
@@ -448,6 +467,9 @@ const Board = ({
       setGameState('PLAYING');
       setTurn(TEAM.CHO);
       setHistory([]);
+      setMoveLog([]);
+      setGameStartedAt(new Date().toISOString());
+      aiReplaySavedRef.current = false;
       setWinner(null);
       setGameResultMethod(null);
       setSelectedPos(null);
@@ -483,6 +505,7 @@ const Board = ({
 
         if (response.data?.pass) {
           setHistory((prev) => [...prev, { board: cloneBoardState(board), turn }]);
+          setMoveLog((prev) => [...prev, { type: 'pass', turn, at: new Date().toISOString() }]);
           setTurn((prev) => (prev === TEAM.CHO ? TEAM.HAN : TEAM.CHO));
           setSelectedPos(null);
           setValidMoves([]);
@@ -598,6 +621,13 @@ const Board = ({
 
   const applyMove = (from, to, isLocal) => {
     setHistory(prev => [...prev, { board: cloneBoardState(board), turn }]);
+    setMoveLog(prev => [...prev, {
+      type: 'move',
+      turn,
+      from: { r: from.r, c: from.c },
+      to: { r: to.r, c: to.c },
+      at: new Date().toISOString(),
+    }]);
     setBoard(prevBoard => {
         const newBoard = prevBoard.map(row => [...row]);
         const piece = newBoard[from.r][from.c];
@@ -615,6 +645,9 @@ const Board = ({
           setBoard(generateBoard(choSetup || SETUP_TYPES.MSMS, hanSetup || SETUP_TYPES.MSMS));
           setTurn(TEAM.CHO);
           setHistory([]);
+          setMoveLog([]);
+          setGameStartedAt(new Date().toISOString());
+          aiReplaySavedRef.current = false;
           setWinner(null);
           setGameResultMethod(null);
           setSelectedPos(null);
@@ -641,6 +674,7 @@ const Board = ({
       setBoard(targetState.board);
       setTurn(targetState.turn);
       setHistory(history.slice(0, -stepsToUndo));
+      setMoveLog(moveLog.slice(0, -stepsToUndo));
       setWinner(null);
       setGameResultMethod(null);
       setSelectedPos(null);
@@ -656,6 +690,7 @@ const Board = ({
        // Check if passing is allowed (e.g. valid moves exist? optional rule)
        // For now allow pass
        setHistory(prev => [...prev, { board: cloneBoardState(board), turn }]);
+       setMoveLog(prev => [...prev, { type: 'pass', turn, at: new Date().toISOString() }]);
        setTurn(turn === TEAM.CHO ? TEAM.HAN : TEAM.CHO);
        setSelectedPos(null);
        setValidMoves([]);
@@ -669,6 +704,7 @@ const Board = ({
       }
       socket.emit('pass', { room, team: myTeam });
       setHistory(prev => [...prev, { board: cloneBoardState(board), turn }]);
+      setMoveLog(prev => [...prev, { type: 'pass', turn, at: new Date().toISOString() }]);
       setTurn(t => t === TEAM.CHO ? TEAM.HAN : TEAM.CHO);
   };
   
@@ -696,6 +732,31 @@ const Board = ({
       setShowResignModal(false);
     }
   }, [winner]);
+
+  useEffect(() => {
+    if (gameMode !== 'ai' || gameState !== 'PLAYING') return;
+    if (!winner || !myTeam || !token || !user?.id) return;
+    if (aiReplaySavedRef.current) return;
+
+    aiReplaySavedRef.current = true;
+    const replayChoSetup = choSetup || SETUP_TYPES.MSMS;
+    const replayHanSetup = hanSetup || SETUP_TYPES.MSMS;
+    const resultType = gameResultMethod || RESULT_METHOD.CHECKMATE;
+
+    axios.post('/api/games/ai', {
+      myTeam,
+      winnerTeam: winner,
+      choSetup: replayChoSetup,
+      hanSetup: replayHanSetup,
+      moveLog,
+      resultType,
+      startedAt: gameStartedAt || new Date().toISOString(),
+      endedAt: new Date().toISOString(),
+    }).catch((err) => {
+      console.error('Failed to save AI replay:', err);
+      showToast(tRef.current('board.alerts.aiReplaySaveFailed'));
+    });
+  }, [choSetup, gameMode, gameResultMethod, gameStartedAt, gameState, hanSetup, moveLog, myTeam, showToast, token, user?.id, winner]);
 
 
   // Replay Controls

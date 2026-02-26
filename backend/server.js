@@ -260,6 +260,70 @@ app.post('/api/ai/move', authenticateToken, async (req, res) => {
   }
 });
 
+app.post('/api/games/ai', authenticateToken, async (req, res) => {
+  const {
+    myTeam,
+    winnerTeam,
+    choSetup,
+    hanSetup,
+    moveLog,
+    resultType,
+    startedAt,
+    endedAt,
+  } = req.body || {};
+
+  if (!isValidTeam(myTeam) || !isValidTeam(winnerTeam)) {
+    return res.status(400).json({ error: 'Invalid team payload' });
+  }
+
+  const normalizedMoveLog = normalizeMoveLog(moveLog);
+  const normalizedResultType = normalizeResultType(resultType);
+  const safeChoSetup = typeof choSetup === 'string' && choSetup.length <= 50 ? choSetup : null;
+  const safeHanSetup = typeof hanSetup === 'string' && hanSetup.length <= 50 ? hanSetup : null;
+  const startTime = normalizeTimestamp(startedAt);
+  let endTime = normalizeTimestamp(endedAt);
+  if (endTime < startTime) endTime = startTime;
+
+  const didUserWin = winnerTeam === myTeam;
+  const winnerId = didUserWin ? req.user.id : null;
+  const loserId = didUserWin ? null : req.user.id;
+  const loserTeam = getOpponentTeam(winnerTeam);
+  const replayPayload = {
+    version: 2,
+    choSetup: safeChoSetup,
+    hanSetup: safeHanSetup,
+    moveLog: normalizedMoveLog,
+  };
+
+  try {
+    await pool.query(
+      `INSERT INTO games (
+          winner_id, loser_id, game_mode, winner_team, loser_team,
+          moves, cho_setup, han_setup, move_log, result_type, move_count, started_at, ended_at
+      ) VALUES ($1, $2, 'ai', $3, $4, $5, $6, $7, $8::jsonb, $9, $10, $11, $12)`,
+      [
+        winnerId,
+        loserId,
+        winnerTeam,
+        loserTeam,
+        JSON.stringify(replayPayload),
+        safeChoSetup,
+        safeHanSetup,
+        JSON.stringify(normalizedMoveLog),
+        normalizedResultType,
+        normalizedMoveLog.length,
+        startTime,
+        endTime,
+      ],
+    );
+
+    res.status(201).json({ ok: true });
+  } catch (err) {
+    console.error('Failed to save AI game replay:', err);
+    res.status(500).json({ error: 'Failed to save AI replay' });
+  }
+});
+
 // Temporary manual recharge endpoint (+10 coins).
 app.post('/api/coins/recharge', authenticateToken, async (req, res) => {
   try {
@@ -416,7 +480,8 @@ async function fetchMaxWinStreak(userId) {
     const result = await pool.query(
         `SELECT winner_id, loser_id
          FROM games
-         WHERE winner_id = $1 OR loser_id = $1
+         WHERE (winner_id = $1 OR loser_id = $1)
+           AND COALESCE(game_mode, 'online') = 'online'
          ORDER BY COALESCE(ended_at, played_at, started_at) ASC, id ASC`,
         [userId],
     );
@@ -441,6 +506,52 @@ function isValidPosition(pos) {
         pos.c >= 0 &&
         pos.c < 9
     );
+}
+
+function normalizeResultType(resultType) {
+    const value = typeof resultType === 'string' ? resultType.trim().toLowerCase() : '';
+    if (value === 'resign' || value === 'time' || value === 'piece' || value === 'checkmate') {
+        return value;
+    }
+    return 'unknown';
+}
+
+function normalizeMoveLog(moveLog) {
+    if (!Array.isArray(moveLog)) return [];
+    const normalized = [];
+
+    for (const event of moveLog) {
+        if (!event || typeof event !== 'object') continue;
+        const turn = isValidTeam(event.turn) ? event.turn : null;
+        const at = typeof event.at === 'string' && event.at.trim() ? event.at : new Date().toISOString();
+
+        if (event.type === 'move' && isValidPosition(event.from) && isValidPosition(event.to) && turn) {
+            normalized.push({
+                type: 'move',
+                turn,
+                from: { r: event.from.r, c: event.from.c },
+                to: { r: event.to.r, c: event.to.c },
+                at,
+            });
+            continue;
+        }
+
+        if (event.type === 'pass' && turn) {
+            normalized.push({
+                type: 'pass',
+                turn,
+                at,
+            });
+        }
+    }
+
+    return normalized;
+}
+
+function normalizeTimestamp(timestamp, fallback = new Date()) {
+    const parsed = new Date(timestamp);
+    if (Number.isNaN(parsed.getTime())) return fallback;
+    return parsed;
 }
 
 function getTeamBySocketId(game, socketId) {
@@ -942,10 +1053,41 @@ app.get('/api/games', authenticateToken, async (req, res) => {
                         ELSE 0
                     END
                 ) AS move_count,
-                u1.nickname AS winner_name,
-                u2.nickname AS loser_name,
-                CASE WHEN g.winner_team = 'cho' THEN u1.nickname ELSE u2.nickname END AS cho_name,
-                CASE WHEN g.winner_team = 'han' THEN u1.nickname ELSE u2.nickname END AS han_name
+                COALESCE(
+                    u1.nickname,
+                    CASE WHEN COALESCE(g.game_mode, 'online') = 'ai' THEN 'AI' END
+                ) AS winner_name,
+                COALESCE(
+                    u2.nickname,
+                    CASE WHEN COALESCE(g.game_mode, 'online') = 'ai' THEN 'AI' END
+                ) AS loser_name,
+                CASE
+                    WHEN g.winner_team = 'cho'
+                        THEN COALESCE(u1.nickname, CASE WHEN COALESCE(g.game_mode, 'online') = 'ai' THEN 'AI' END)
+                    ELSE COALESCE(u2.nickname, CASE WHEN COALESCE(g.game_mode, 'online') = 'ai' THEN 'AI' END)
+                END AS cho_name,
+                CASE
+                    WHEN g.winner_team = 'han'
+                        THEN COALESCE(u1.nickname, CASE WHEN COALESCE(g.game_mode, 'online') = 'ai' THEN 'AI' END)
+                    ELSE COALESCE(u2.nickname, CASE WHEN COALESCE(g.game_mode, 'online') = 'ai' THEN 'AI' END)
+                END AS han_name,
+                CASE
+                    WHEN g.winner_id = $1 THEN 'win'
+                    WHEN g.loser_id = $1 THEN 'loss'
+                    ELSE 'draw'
+                END AS my_result,
+                CASE
+                    WHEN g.winner_id = $1 THEN g.winner_team
+                    WHEN g.loser_id = $1 THEN g.loser_team
+                    ELSE NULL
+                END AS my_team,
+                CASE
+                    WHEN g.winner_id = $1
+                        THEN COALESCE(u2.nickname, CASE WHEN COALESCE(g.game_mode, 'online') = 'ai' THEN 'AI' END)
+                    WHEN g.loser_id = $1
+                        THEN COALESCE(u1.nickname, CASE WHEN COALESCE(g.game_mode, 'online') = 'ai' THEN 'AI' END)
+                    ELSE NULL
+                END AS opponent_name
             FROM games g
             LEFT JOIN users u1 ON g.winner_id = u1.id
             LEFT JOIN users u2 ON g.loser_id = u2.id
@@ -965,10 +1107,24 @@ app.get('/api/games/:id', authenticateToken, async (req, res) => {
         const result = await pool.query(`
             SELECT
                 g.*,
-                u1.nickname AS winner_name,
-                u2.nickname AS loser_name,
-                CASE WHEN g.winner_team = 'cho' THEN u1.nickname ELSE u2.nickname END AS cho_name,
-                CASE WHEN g.winner_team = 'han' THEN u1.nickname ELSE u2.nickname END AS han_name
+                COALESCE(
+                    u1.nickname,
+                    CASE WHEN COALESCE(g.game_mode, 'online') = 'ai' THEN 'AI' END
+                ) AS winner_name,
+                COALESCE(
+                    u2.nickname,
+                    CASE WHEN COALESCE(g.game_mode, 'online') = 'ai' THEN 'AI' END
+                ) AS loser_name,
+                CASE
+                    WHEN g.winner_team = 'cho'
+                        THEN COALESCE(u1.nickname, CASE WHEN COALESCE(g.game_mode, 'online') = 'ai' THEN 'AI' END)
+                    ELSE COALESCE(u2.nickname, CASE WHEN COALESCE(g.game_mode, 'online') = 'ai' THEN 'AI' END)
+                END AS cho_name,
+                CASE
+                    WHEN g.winner_team = 'han'
+                        THEN COALESCE(u1.nickname, CASE WHEN COALESCE(g.game_mode, 'online') = 'ai' THEN 'AI' END)
+                    ELSE COALESCE(u2.nickname, CASE WHEN COALESCE(g.game_mode, 'online') = 'ai' THEN 'AI' END)
+                END AS han_name
             FROM games g
             LEFT JOIN users u1 ON g.winner_id = u1.id
             LEFT JOIN users u2 ON g.loser_id = u2.id

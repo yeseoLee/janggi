@@ -835,11 +835,37 @@
   align-items: center;
   padding: 12px 16px 0;
   font-size: 0.88rem;
+  gap: 10px;
 }
 
 .records-filter-bar span {
   color: var(--color-text-muted);
   font-weight: 500;
+}
+
+.records-filter-tabs {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.records-filter-tab {
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text-secondary);
+  border-radius: 9999px;
+  padding: 5px 10px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.records-filter-tab.active {
+  border-color: #d97726;
+  background: #fff7ed;
+  color: #9a3412;
 }
 
 .record-card {
@@ -907,6 +933,24 @@
   background: var(--color-border-light);
   padding: 2px 8px;
   border-radius: 6px;
+}
+
+.record-game-type.mode-ranked {
+  background: #fff7ed;
+  color: #9a3412;
+  border: 1px solid #fdba74;
+}
+
+.record-game-type.mode-ai {
+  background: #eff6ff;
+  color: #1d4ed8;
+  border: 1px solid #bfdbfe;
+}
+
+.record-game-type.mode-friendly {
+  background: #f3f4f6;
+  color: #4b5563;
+  border: 1px solid #e5e7eb;
 }
 
 .record-date {

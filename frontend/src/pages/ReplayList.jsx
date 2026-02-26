@@ -10,6 +10,7 @@ function ReplayList() {
   const [games, setGames] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [modeFilter, setModeFilter] = useState('all');
   const navigate = useNavigate();
   const { t } = useLanguage();
   const { user } = useAuth();
@@ -23,12 +24,16 @@ function ReplayList() {
   }, [t]);
 
   const getResultInfo = (game) => {
+    if (game.my_result === 'win') return { type: 'win', text: t('records.winChar'), sub: 'Win' };
+    if (game.my_result === 'loss') return { type: 'loss', text: t('records.lossChar'), sub: 'Loss' };
+    if (game.my_result === 'draw') return { type: 'draw', text: t('records.drawChar'), sub: 'Draw' };
     if (!game.winner_name) return { type: 'draw', text: t('records.drawChar'), sub: 'Draw' };
     if (user && game.winner_name === user.nickname) return { type: 'win', text: t('records.winChar'), sub: 'Win' };
     return { type: 'loss', text: t('records.lossChar'), sub: 'Loss' };
   };
 
   const getMyTeam = (game) => {
+    if (game.my_team === 'cho' || game.my_team === 'han') return game.my_team;
     if (!user) return 'cho';
     const isCho = (game.cho_name === user.nickname) ||
       (game.winner_team === 'cho' && game.winner_name === user.nickname) ||
@@ -37,6 +42,9 @@ function ReplayList() {
   };
 
   const getOpponentName = (game) => {
+    if (typeof game.opponent_name === 'string' && game.opponent_name.trim()) {
+      return game.opponent_name;
+    }
     const choName = game.cho_name || (game.winner_team === 'cho' ? game.winner_name : game.loser_name);
     const hanName = game.han_name || (game.winner_team === 'han' ? game.winner_name : game.loser_name);
     if (user && choName === user.nickname) return hanName || 'AI';
@@ -44,11 +52,18 @@ function ReplayList() {
     return `${choName || '?'} vs ${hanName || '?'}`;
   };
 
-  const getGameType = (game) => {
+  const getGameModeKey = (game) => {
     const mode = String(game.game_mode || '').toLowerCase();
-    if (mode === 'ai') return t('records.aiMatch');
-    if (mode === 'friendly' || mode === 'casual') return t('records.friendlyMatch');
-    return t('records.rankedMatch');
+    if (mode === 'ai') return 'ai';
+    if (mode === 'friendly' || mode === 'casual') return 'friendly';
+    return 'ranked';
+  };
+
+  const getGameType = (game) => {
+    const modeKey = getGameModeKey(game);
+    if (modeKey === 'ai') return { label: t('records.aiMatch'), modeKey };
+    if (modeKey === 'friendly') return { label: t('records.friendlyMatch'), modeKey };
+    return { label: t('records.rankedMatch'), modeKey };
   };
 
   const getResultType = (game, result) => {
@@ -60,8 +75,18 @@ function ReplayList() {
       : t('replay.resultLoss', { method: methodLabel });
   };
 
-  const totalGames = games.length;
-  const wins = user ? games.filter(g => g.winner_name === user.nickname).length : 0;
+  const filteredGames = games.filter((game) => {
+    const modeKey = getGameModeKey(game);
+    if (modeFilter === 'ai') return modeKey === 'ai';
+    if (modeFilter === 'ranked') return modeKey === 'ranked';
+    return true;
+  });
+
+  const totalGames = filteredGames.length;
+  const wins = user ? filteredGames.filter((game) => {
+    if (game.my_result) return game.my_result === 'win';
+    return game.winner_name === user.nickname;
+  }).length : 0;
   const winRate = totalGames > 0 ? ((wins / totalGames) * 100).toFixed(1) : '0.0';
 
   return (
@@ -88,7 +113,35 @@ function ReplayList() {
 
         {loading && <div className="page-loading">{t('replay.loading')}</div>}
         {!loading && error && <div className="page-empty"><span className="material-icons-round">error_outline</span>{error}</div>}
-        {!loading && !error && games.length === 0 && (
+        {!loading && !error && (
+          <div className="records-filter-bar">
+            <span>{t('records.filterLabel')}</span>
+            <div className="records-filter-tabs">
+              <button
+                type="button"
+                className={`records-filter-tab ${modeFilter === 'all' ? 'active' : ''}`}
+                onClick={() => setModeFilter('all')}
+              >
+                {t('records.filterAll')}
+              </button>
+              <button
+                type="button"
+                className={`records-filter-tab ${modeFilter === 'ranked' ? 'active' : ''}`}
+                onClick={() => setModeFilter('ranked')}
+              >
+                {t('records.filterRanked')}
+              </button>
+              <button
+                type="button"
+                className={`records-filter-tab ${modeFilter === 'ai' ? 'active' : ''}`}
+                onClick={() => setModeFilter('ai')}
+              >
+                {t('records.filterAi')}
+              </button>
+            </div>
+          </div>
+        )}
+        {!loading && !error && filteredGames.length === 0 && (
           <div className="page-empty">
             <span className="material-icons-round">inbox</span>
             {t('records.noGames')}
@@ -96,7 +149,7 @@ function ReplayList() {
         )}
 
         <div className="records-list">
-          {games.map(game => {
+          {filteredGames.map(game => {
             const result = getResultInfo(game);
             const myTeam = getMyTeam(game);
             const opponent = getOpponentName(game);
@@ -112,7 +165,7 @@ function ReplayList() {
                 </div>
                 <div className="record-card-body">
                   <div className="record-card-top">
-                    <span className="record-game-type">{gameType}</span>
+                    <span className={`record-game-type mode-${gameType.modeKey}`}>{gameType.label}</span>
                     <span className="record-date">{dateStr}</span>
                   </div>
                   <div className="record-match-row">

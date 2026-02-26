@@ -115,9 +115,15 @@ function MainMenu() {
   }
 
   const getResultLabel = (game) => {
-    if (!game.winner_name) return { type: 'draw', label: t('records.draw') };
     const resultMethod = normalizeResultMethod(game.result_type);
     const methodLabel = t(`replay.result.${resultMethod}`);
+    if (game.my_result === 'win') {
+      return { type: 'win', label: t('replay.resultWin', { method: methodLabel }) };
+    }
+    if (game.my_result === 'loss') {
+      return { type: 'loss', label: t('replay.resultLoss', { method: methodLabel }) };
+    }
+    if (!game.winner_name) return { type: 'draw', label: t('records.draw') };
     if (game.winner_name === user.nickname) {
       return { type: 'win', label: t('replay.resultWin', { method: methodLabel }) };
     }
@@ -125,6 +131,8 @@ function MainMenu() {
   };
 
   const getTeamChar = (game) => {
+    if (game.my_team === 'cho') return { char: '楚', team: 'cho' };
+    if (game.my_team === 'han') return { char: '漢', team: 'han' };
     const isCho = (game.cho_name === user.nickname) ||
       (game.winner_team === 'cho' && game.winner_name === user.nickname) ||
       (game.winner_team === 'han' && game.winner_name !== user.nickname);
@@ -132,6 +140,9 @@ function MainMenu() {
   };
 
   const getOpponentName = (game) => {
+    if (typeof game.opponent_name === 'string' && game.opponent_name.trim()) {
+      return game.opponent_name;
+    }
     const choName = game.cho_name || (game.winner_team === 'cho' ? game.winner_name : game.loser_name);
     const hanName = game.han_name || (game.winner_team === 'han' ? game.winner_name : game.loser_name);
     if (choName === user.nickname) return hanName || 'AI';
