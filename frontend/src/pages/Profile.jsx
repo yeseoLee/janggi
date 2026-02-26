@@ -202,13 +202,6 @@ function Profile() {
               </button>
             </div>
           </div>
-          <button className="profile-settings-item" onClick={() => navigate('/records')}>
-            <div className="profile-settings-item-left">
-              <span className="material-icons-round">history</span>
-              <span>{t('profile.gameRecords')}</span>
-            </div>
-            <span className="material-icons-round">chevron_right</span>
-          </button>
           <button className="profile-settings-item" onClick={logout}>
             <div className="profile-settings-item-left">
               <span className="material-icons-round">logout</span>
