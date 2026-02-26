@@ -5,7 +5,7 @@ import { TEAM } from '../game/constants';
 
 function GamePage() {
   const [searchParams] = useSearchParams();
-  const mode = searchParams.get('mode') || 'ai'; // 'ai', 'online', 'friendly'
+  const mode = searchParams.get('mode') || 'ai'; // 'ai', 'online', 'friendly', 'solo'
   const friendlyMatchId = searchParams.get('matchId') || '';
   
   const [viewTeam, setViewTeam] = useState(TEAM.CHO);

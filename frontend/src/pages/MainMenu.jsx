@@ -356,7 +356,7 @@ function MainMenu() {
             <span className="match-btn-title">{t('menu.aiMatchShort')}</span>
             <span className="match-btn-subtitle">{t('menu.aiMatchSub')}</span>
           </button>
-          <button className="match-btn solo" onClick={() => showToast(t('menu.soloComingSoon'))}>
+          <button className="match-btn solo" onClick={() => navigate('/game?mode=solo')}>
             <span className="material-icons-round">person</span>
             <span className="match-btn-title">{t('menu.soloPlayShort')}</span>
             <span className="match-btn-subtitle">{t('menu.soloPlaySub')}</span>

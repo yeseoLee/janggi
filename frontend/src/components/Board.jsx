@@ -208,7 +208,7 @@ const pickFallbackAiMove = (boardState, team) => {
 };
 
 const Board = ({ 
-    gameMode, // 'ai', 'online', 'replay'
+    gameMode, // 'ai', 'online', 'friendly', 'solo', 'replay'
     friendlyMatchId,
     replayHistory, // for replay mode
     viewTeam, setViewTeam, 
@@ -610,7 +610,16 @@ const Board = ({
         setGameState('SELECT_SIDE');
         setViewTeam?.(TEAM.CHO);
     } else {
-        // Local mode fallback (manual two-side play)
+        // Local manual mode (solo)
+        setRoom(null);
+        setOpponentInfo(null);
+        setMyTeam(null);
+        myTeamRef.current = null;
+        setHanSetup(null);
+        setChoSetup(null);
+        setBoard(createEmptyBoard());
+        setTurn(TEAM.CHO);
+        setHistory([]);
         setShowMatchCancelledModal(false);
         setShowMatchStartModal(false);
         setPendingSetupState(null);
@@ -623,7 +632,14 @@ const Board = ({
         setSetupTimerSync(null);
         setSetupTimerNowMs(Date.now());
         setGameState('SETUP_HAN');
-        setMyTeam(null);
+        setWinner(null);
+        setSelectedPos(null);
+        setValidMoves([]);
+        setCheckAlert(null);
+        setScores({ cho: 72, han: 73.5 });
+        setAiThinking(false);
+        aiThinkingRef.current = false;
+        setViewTeam?.(TEAM.CHO);
     }
   }, [friendlyMatchId, gameMode, isNetworkGame, navigate, resetOnlineMatchState, showToast, token, user]);
 
@@ -1140,6 +1156,8 @@ const Board = ({
     ? t('board.mode.online')
     : gameMode === 'friendly'
       ? t('board.mode.friendly')
+      : gameMode === 'solo'
+        ? t('board.mode.solo')
       : gameMode === 'replay'
         ? t('board.mode.replay')
         : t('board.mode.ai');
@@ -1205,6 +1223,7 @@ const Board = ({
   const opponentSetupTeam = setupTeam === TEAM.HAN ? TEAM.CHO : TEAM.HAN;
   const opponentSetupPieces = getSetupPieces(opponentSetupTeam === TEAM.HAN ? hanSetup : choSetup);
   const isAiSetupPhase = gameMode === 'ai' && gameState !== 'SELECT_SIDE';
+  const isSoloSetupPhase = gameMode === 'solo';
   const isSelectingAiSetup = isAiSetupPhase && myTeam && setupTeam !== myTeam;
 
   // Determine which captured pieces go top vs bottom based on viewTeam
@@ -1535,8 +1554,12 @@ const Board = ({
                             </>
                         ) : (
                             <>
-                                {isAiSetupPhase && (
-                                    <p className="setup-fs-subtitle">{isSelectingAiSetup ? t('board.setupAiSubtitle') : t('board.setupMySubtitle')}</p>
+                                {(isAiSetupPhase || isSoloSetupPhase) && (
+                                    <p className="setup-fs-subtitle">
+                                        {isAiSetupPhase
+                                          ? (isSelectingAiSetup ? t('board.setupAiSubtitle') : t('board.setupMySubtitle'))
+                                          : t('board.setupSoloSubtitle')}
+                                    </p>
                                 )}
                                 {opponentSetupPieces.length > 0 && (
                                     <div className="setup-fs-opponent-preview">
