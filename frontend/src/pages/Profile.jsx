@@ -11,14 +11,13 @@ function Profile() {
   const { t, language, setLanguage } = useLanguage();
   const [toastMessage, setToastMessage] = useState('');
   const [isRecharging, setIsRecharging] = useState(false);
-  const [isWithdrawConfirmPending, setIsWithdrawConfirmPending] = useState(false);
+  const [showWithdrawModal, setShowWithdrawModal] = useState(false);
+  const [isWithdrawing, setIsWithdrawing] = useState(false);
   const toastTimerRef = useRef(null);
-  const withdrawConfirmTimerRef = useRef(null);
 
   useEffect(() => {
     return () => {
       if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
-      if (withdrawConfirmTimerRef.current) clearTimeout(withdrawConfirmTimerRef.current);
     };
   }, []);
 
@@ -33,32 +32,31 @@ function Profile() {
     toastTimerRef.current = setTimeout(() => setToastMessage(''), 2200);
   };
 
-  const handleWithdraw = async () => {
-    if (!isWithdrawConfirmPending) {
-      setIsWithdrawConfirmPending(true);
-      if (withdrawConfirmTimerRef.current) clearTimeout(withdrawConfirmTimerRef.current);
-      showToast(t('menu.withdrawConfirmToast'));
-      withdrawConfirmTimerRef.current = setTimeout(() => {
-        setIsWithdrawConfirmPending(false);
-        withdrawConfirmTimerRef.current = null;
-      }, 2200);
-      return;
-    }
+  const handleWithdraw = () => {
+    if (isWithdrawing) return;
+    setShowWithdrawModal(true);
+  };
 
-    setIsWithdrawConfirmPending(false);
-    if (withdrawConfirmTimerRef.current) {
-      clearTimeout(withdrawConfirmTimerRef.current);
-      withdrawConfirmTimerRef.current = null;
-    }
+  const handleCancelWithdraw = () => {
+    if (isWithdrawing) return;
+    setShowWithdrawModal(false);
+  };
 
+  const handleConfirmWithdraw = async () => {
+    if (isWithdrawing) return;
+    setIsWithdrawing(true);
     try {
       await axios.delete('/api/auth/me');
+      setShowWithdrawModal(false);
       showToast(t('menu.accountDeleted'));
       setTimeout(() => {
         logout();
       }, 700);
     } catch {
+      setShowWithdrawModal(false);
       showToast(t('menu.withdrawFailed'));
+    } finally {
+      setIsWithdrawing(false);
     }
   };
 
@@ -225,6 +223,22 @@ function Profile() {
           </button>
         </div>
       </div>
+
+      {showWithdrawModal && (
+        <div className="menu-confirm-overlay" onClick={handleCancelWithdraw}>
+          <div className="menu-confirm-card" onClick={(e) => e.stopPropagation()}>
+            <div className="menu-confirm-title">{t('menu.withdrawConfirm')}</div>
+            <div className="menu-confirm-actions">
+              <button className="menu-confirm-btn secondary" onClick={handleCancelWithdraw} disabled={isWithdrawing}>
+                {t('common.no')}
+              </button>
+              <button className="menu-confirm-btn primary" onClick={handleConfirmWithdraw} disabled={isWithdrawing}>
+                {t('common.yes')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {toastMessage && <div className="toast-notification">{toastMessage}</div>}
 
