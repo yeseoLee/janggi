@@ -168,6 +168,12 @@
 
 /* ===== Board (kept from original — core rendering) ===== */
 .janggi-board {
+  --board-grid-pad-x: 8%;
+  --board-grid-pad-y: 8%;
+  --board-inner-width: calc(100% - (var(--board-grid-pad-x) * 2));
+  --board-inner-height: calc(100% - (var(--board-grid-pad-y) * 2));
+  --board-palace-width: calc(var(--board-inner-width) * 0.25);
+  --board-palace-height: calc(var(--board-inner-height) * 0.2222222);
   position: relative;
   width: min(100%, 540px, max(220px, calc((100dvh - 350px) * 0.9091)));
   max-height: 100%;
@@ -208,7 +214,7 @@
   position: absolute;
   top: 0;
   left: 0;
-  padding: 8%;
+  padding: var(--board-grid-pad-y) var(--board-grid-pad-x);
   box-sizing: border-box;
 }
 
@@ -236,18 +242,18 @@
 .grid-container::before {
   content: '';
   position: absolute;
-  top: 8%;
-  left: 8%;
-  right: 8%;
-  bottom: 8%;
+  top: var(--board-grid-pad-y);
+  left: var(--board-grid-pad-x);
+  right: var(--board-grid-pad-x);
+  bottom: var(--board-grid-pad-y);
   border: 1px solid rgba(28, 18, 11, 0.9);
   pointer-events: none;
 }
 
 .palace {
   position: absolute;
-  width: 21%;
-  height: 18.66%;
+  width: var(--board-palace-width);
+  height: var(--board-palace-height);
   pointer-events: none;
 }
 
@@ -256,28 +262,28 @@
   position: absolute;
   inset: 0;
   background:
-    linear-gradient(45deg, transparent calc(50% - 0.5px), rgba(28, 18, 11, 0.85) calc(50% - 0.5px), rgba(28, 18, 11, 0.85) calc(50% + 0.5px), transparent calc(50% + 0.5px)),
-    linear-gradient(-45deg, transparent calc(50% - 0.5px), rgba(28, 18, 11, 0.85) calc(50% - 0.5px), rgba(28, 18, 11, 0.85) calc(50% + 0.5px), transparent calc(50% + 0.5px));
+    linear-gradient(to bottom right, transparent calc(50% - 0.5px), rgba(28, 18, 11, 0.85) calc(50% - 0.5px), rgba(28, 18, 11, 0.85) calc(50% + 0.5px), transparent calc(50% + 0.5px)),
+    linear-gradient(to bottom left, transparent calc(50% - 0.5px), rgba(28, 18, 11, 0.85) calc(50% - 0.5px), rgba(28, 18, 11, 0.85) calc(50% + 0.5px), transparent calc(50% + 0.5px));
 }
 
 .palace-top {
-  top: 8%;
+  top: var(--board-grid-pad-y);
   left: 50%;
   transform: translateX(-50%);
 }
 
 .palace-bottom {
-  bottom: 8%;
+  bottom: var(--board-grid-pad-y);
   left: 50%;
   transform: translateX(-50%);
 }
 
 .piece-layer {
   position: absolute;
-  top: 8%;
-  left: 8%;
-  right: 8%;
-  bottom: 8%;
+  top: var(--board-grid-pad-y);
+  left: var(--board-grid-pad-x);
+  right: var(--board-grid-pad-x);
+  bottom: var(--board-grid-pad-y);
   display: block;
   pointer-events: none;
 }
