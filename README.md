@@ -2,6 +2,24 @@
 
 Web-based Janggi service with online matchmaking, Fairy-Stockfish AI matches, replay (기보), rank progression, and bilingual UI (Korean/English).
 
+## Detailed Documentation / 상세 문서
+
+Detailed EN/KO technical documents are organized per layer/service.
+
+| Area | English | 한국어 |
+|---|---|---|
+| Frontend | [Frontend Docs](docs/en/frontend.md) | [프론트엔드 문서](docs/ko/frontend.md) |
+| Backend | [Backend Docs](docs/en/backend.md) | [백엔드 문서](docs/ko/backend.md) |
+| AI Server | [AI Server Docs](docs/en/ai-server.md) | [AI 서버 문서](docs/ko/ai-server.md) |
+| Chat Server | [Chat Server Docs](docs/en/chat-server.md) | [채팅 서버 문서](docs/ko/chat-server.md) |
+
+Documentation includes:
+- full route/event contracts
+- session and duplicate-login handling
+- ranked/friendly/AI/solo/replay flow details
+- clock/byoyomi and setup timer behavior
+- social/chat architecture and operations
+
 ## Current Features
 
 ### Game Modes
