@@ -20,6 +20,13 @@ const {
   isValidBoardState,
   parseEngineMove,
 } = require('./src/aiMove');
+const {
+  DEFAULT_AI_TIER,
+  MAX_AI_TIER,
+  clampAiTier,
+  getAiLevel,
+  resolveAiUnlockAfterWin,
+} = require('./src/aiLevels');
 const { resolveRankAfterResult, normalizeCounter } = require('./src/rank');
 const { calculateMaxWinStreak } = require('./src/streak');
 require('dotenv').config();
@@ -27,6 +34,7 @@ require('dotenv').config();
 const app = express();
 const server = http.createServer(app);
 const AI_SERVICE_URL = process.env.AI_SERVICE_URL || 'http://localhost:4000';
+const USER_SELF_FIELDS = 'id, username, nickname, rank, wins, losses, coins, rank_wins, rank_losses, rating, ai_unlocked_tier';
 
 // Database Connection
 const pool = new Pool({
@@ -110,7 +118,7 @@ app.post('/api/auth/register', async (req, res) => {
     const hashedPassword = await bcrypt.hash(password, 10);
     // Grant 10 coins by default (schema default)
     const result = await pool.query(
-      'INSERT INTO users (username, password, nickname, coins) VALUES ($1, $2, $3, $4) RETURNING id, username, nickname, rank, wins, losses, coins, rank_wins, rank_losses, rating',
+      `INSERT INTO users (username, password, nickname, coins) VALUES ($1, $2, $3, $4) RETURNING ${USER_SELF_FIELDS}`,
       [username, hashedPassword, nickname, 10]
     );
     res.status(201).json({ message: 'User registered', user: { ...result.rows[0], max_win_streak: 0 } });
@@ -165,7 +173,7 @@ app.post('/api/auth/login', async (req, res) => {
 app.get('/api/user/me', authenticateToken, async (req, res) => {
   try {
     const result = await pool.query(
-      'SELECT id, username, nickname, rank, wins, losses, coins, rank_wins, rank_losses, rating FROM users WHERE id = $1',
+      `SELECT ${USER_SELF_FIELDS} FROM users WHERE id = $1`,
       [req.user.id],
     );
     if (result.rows.length === 0) return res.sendStatus(404);
@@ -734,10 +742,12 @@ app.post('/api/coins/spend-ai-match', authenticateToken, async (req, res) => {
 
 // Compute AI move through Fairy-Stockfish service.
 app.post('/api/ai/move', authenticateToken, async (req, res) => {
-  const { board, turn, movetime, depth } = req.body || {};
+  const { board, turn, aiTier } = req.body || {};
   if (!isValidBoardState(board) || (turn !== TEAM_CHO && turn !== TEAM_HAN)) {
     return res.status(400).json({ error: 'Invalid board state or turn' });
   }
+
+  const selectedAiLevel = getAiLevel(clampAiTier(aiTier, DEFAULT_AI_TIER));
 
   let fen;
   try {
@@ -747,11 +757,11 @@ app.post('/api/ai/move', authenticateToken, async (req, res) => {
   }
 
   const requestedMoveTime = clampMoveTime(
-    movetime,
+    selectedAiLevel.moveTimeMs,
     clampMoveTime(process.env.AI_MOVE_TIME_MS, 700),
   );
   const requestedDepth = clampDepth(
-    depth,
+    selectedAiLevel.depth,
     clampDepth(process.env.AI_SEARCH_DEPTH, 8),
   );
 
@@ -767,6 +777,9 @@ app.post('/api/ai/move', authenticateToken, async (req, res) => {
         fen,
         movetime: requestedMoveTime,
         depth: requestedDepth,
+        skillLevel: selectedAiLevel.skillLevel,
+        useLimitStrength: selectedAiLevel.useLimitStrength,
+        uciElo: selectedAiLevel.uciElo,
       }),
       signal: controller.signal,
     });
@@ -810,6 +823,7 @@ app.post('/api/games/ai', authenticateToken, async (req, res) => {
     resultType,
     startedAt,
     endedAt,
+    aiTier,
   } = req.body || {};
 
   if (!isValidTeam(myTeam) || !isValidTeam(winnerTeam)) {
@@ -817,6 +831,7 @@ app.post('/api/games/ai', authenticateToken, async (req, res) => {
   }
 
   const normalizedMoveLog = normalizeMoveLog(moveLog);
+  const normalizedAiTier = clampAiTier(aiTier, DEFAULT_AI_TIER);
   const normalizedResultType = normalizeResultType(resultType);
   const safeChoSetup = typeof choSetup === 'string' && choSetup.length <= 50 ? choSetup : null;
   const safeHanSetup = typeof hanSetup === 'string' && hanSetup.length <= 50 ? hanSetup : null;
@@ -835,8 +850,36 @@ app.post('/api/games/ai', authenticateToken, async (req, res) => {
     moveLog: normalizedMoveLog,
   };
 
+  const client = await pool.connect();
   try {
-    await pool.query(
+    await client.query('BEGIN');
+
+    let unlockState = {
+      previousUnlockedTier: null,
+      unlockedTier: null,
+      unlocked: false,
+      justUnlockedTier: null,
+    };
+
+    if (didUserWin) {
+      const userResult = await client.query(
+        'SELECT ai_unlocked_tier FROM users WHERE id = $1 FOR UPDATE',
+        [req.user.id],
+      );
+      if (userResult.rows.length === 0) {
+        throw new Error('AI winner user not found');
+      }
+
+      unlockState = resolveAiUnlockAfterWin(userResult.rows[0].ai_unlocked_tier, normalizedAiTier);
+      if (unlockState.unlocked) {
+        await client.query(
+          'UPDATE users SET ai_unlocked_tier = $2 WHERE id = $1',
+          [req.user.id, unlockState.unlockedTier],
+        );
+      }
+    }
+
+    await client.query(
       `INSERT INTO games (
           winner_id, loser_id, game_mode, winner_team, loser_team,
           moves, cho_setup, han_setup, move_log, result_type, move_count, started_at, ended_at
@@ -857,10 +900,19 @@ app.post('/api/games/ai', authenticateToken, async (req, res) => {
       ],
     );
 
-    res.status(201).json({ ok: true });
+    await client.query('COMMIT');
+
+    res.status(201).json({
+      ok: true,
+      aiTier: normalizedAiTier,
+      unlock: unlockState,
+    });
   } catch (err) {
+    await client.query('ROLLBACK');
     console.error('Failed to save AI game replay:', err);
     res.status(500).json({ error: 'Failed to save AI replay' });
+  } finally {
+    client.release();
   }
 });
 
@@ -911,6 +963,7 @@ const initDB = async () => {
                 coins INTEGER DEFAULT 10,
                 rank_wins INTEGER DEFAULT 0,
                 rank_losses INTEGER DEFAULT 0,
+                ai_unlocked_tier INTEGER DEFAULT 0,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
         `);
@@ -975,6 +1028,8 @@ const initDB = async () => {
 
         await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS rank_wins INTEGER DEFAULT 0;`);
         await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS rank_losses INTEGER DEFAULT 0;`);
+        await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS ai_unlocked_tier INTEGER DEFAULT ${DEFAULT_AI_TIER};`);
+        await pool.query(`UPDATE users SET ai_unlocked_tier = LEAST(${MAX_AI_TIER}, GREATEST(${DEFAULT_AI_TIER}, COALESCE(ai_unlocked_tier, ${DEFAULT_AI_TIER})));`);
         await pool.query(`UPDATE users SET rank_wins = COALESCE(rank_wins, 0), rank_losses = COALESCE(rank_losses, 0);`);
 
         // ELO rating column — default 1000 for all new and existing users.

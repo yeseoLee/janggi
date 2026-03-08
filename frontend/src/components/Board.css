@@ -869,6 +869,25 @@
   color: var(--color-primary, #D97726);
 }
 
+.setup-fs-level-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.setup-fs-level-current {
+  font-size: 0.88rem;
+  font-weight: 800;
+  color: var(--color-text, #1F2937);
+}
+
+.setup-fs-level-unlocked {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--color-text-secondary, #6B7280);
+}
+
 .setup-fs-slider-row {
   display: flex;
   align-items: center;
@@ -919,6 +938,18 @@
   border-color: var(--color-primary, #D97726);
   background: var(--color-primary, #D97726);
   color: #fff;
+}
+
+.setup-fs-preset-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+  border-color: var(--color-border, #E5E7EB);
+  color: var(--color-text-muted, #9CA3AF);
+}
+
+.setup-fs-preset-btn:disabled:hover {
+  border-color: var(--color-border, #E5E7EB);
+  color: var(--color-text-muted, #9CA3AF);
 }
 
 /* Side Select */

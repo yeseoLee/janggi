@@ -8,16 +8,13 @@ import Piece from './Piece';
 import { TEAM, PIECE_TYPE, SETUP_TYPES, generateBoard } from '../game/constants';
 import { RESULT_METHOD, normalizeResultMethod } from '../game/result';
 import { getValidMoves, getSafeMoves, isCheck, isCheckmate, calculateScore } from '../game/rules';
+import { AI_LEVELS, DEFAULT_AI_TIER, clampAiTier, getAiLevel } from '../game/aiLevels';
 import './Board.css';
 
 const socket = io('/', { autoConnect: false }); // Connect manually
 const createEmptyBoard = () => Array.from({ length: 10 }, () => Array(9).fill(null));
 const AI_THINK_DELAY_MS = 220;
-const AI_MOVE_TIME_MS = 700;
-const AI_DEFAULT_DEPTH = 8;
-const AI_MIN_DEPTH = 2;
-const AI_MAX_DEPTH = 20;
-const AI_DEPTH_PRESETS = [4, 8, 12, 16];
+const AI_LEVEL_STORAGE_KEY = 'janggi_ai_level_tier';
 const SETUP_SELECTION_TIMEOUT_SECONDS = 20;
 const MATCH_READY_AUTO_CONFIRM_SECONDS = 5;
 const MATCH_READY_AUTO_CONFIRM_MS = MATCH_READY_AUTO_CONFIRM_SECONDS * 1000;
@@ -218,7 +215,7 @@ const Board = ({
     boardZoomed = false,
     setBoardZoomed = () => {}
 }) => {
-  const { user, token } = useAuth();
+  const { user, token, refreshUser } = useAuth();
   const { t } = useLanguage();
   const navigate = useNavigate();
   const tRef = useRef(t);
@@ -268,8 +265,11 @@ const Board = ({
   const moveLogRef = useRef(moveLog);
   const historyRef = useRef(history);
   const onlineFinishRequestedRef = useRef(false);
-  const [aiSearchDepth, setAiSearchDepth] = useState(AI_DEFAULT_DEPTH);
+  const [selectedAiTier, setSelectedAiTier] = useState(() => clampAiTier(localStorage.getItem(AI_LEVEL_STORAGE_KEY), DEFAULT_AI_TIER));
   const aiEngineTeam = myTeam ? getOpposingTeam(myTeam) : null;
+  const unlockedAiTier = clampAiTier(user?.ai_unlocked_tier, DEFAULT_AI_TIER);
+  const selectedAiLevel = getAiLevel(Math.min(selectedAiTier, unlockedAiTier));
+  const aiOpponentName = `AI ${selectedAiLevel.label}`;
 
   // Replay State
   const [replayStep, setReplayStep] = useState(0); 
@@ -296,6 +296,17 @@ const Board = ({
   useEffect(() => () => {
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
   }, []);
+
+  useEffect(() => {
+    setSelectedAiTier((currentTier) => {
+      const nextTier = Math.min(clampAiTier(currentTier, unlockedAiTier), unlockedAiTier);
+      return nextTier === currentTier ? currentTier : nextTier;
+    });
+  }, [unlockedAiTier]);
+
+  useEffect(() => {
+    localStorage.setItem(AI_LEVEL_STORAGE_KEY, String(selectedAiTier));
+  }, [selectedAiTier]);
 
   useEffect(() => {
     roomRef.current = room;
@@ -604,7 +615,6 @@ const Board = ({
         setScores({ cho: 72, han: 73.5 });
         setAiThinking(false);
         aiThinkingRef.current = false;
-        setAiSearchDepth(AI_DEFAULT_DEPTH);
         setShowMatchCancelledModal(false);
         setShowMatchStartModal(false);
         setPendingSetupState(null);
@@ -643,7 +653,7 @@ const Board = ({
         aiThinkingRef.current = false;
         setViewTeam?.(TEAM.CHO);
     }
-  }, [friendlyMatchId, gameMode, isNetworkGame, navigate, resetOnlineMatchState, showToast, token, user]);
+  }, [friendlyMatchId, gameMode, isNetworkGame, navigate, resetOnlineMatchState, showToast, token, user?.id]);
 
   // Trigger Game Start when setups are ready (Network)
   useEffect(() => {
@@ -703,11 +713,10 @@ const Board = ({
       setGameState(team === TEAM.HAN ? 'SETUP_HAN' : 'SETUP_CHO');
   };
 
-  const handleAiDepthChange = (value) => {
-      const parsed = Number(value);
-      if (!Number.isFinite(parsed)) return;
-      const clamped = Math.max(AI_MIN_DEPTH, Math.min(AI_MAX_DEPTH, Math.floor(parsed)));
-      setAiSearchDepth(clamped);
+  const handleAiLevelSelect = (tier) => {
+      const nextTier = clampAiTier(tier, unlockedAiTier);
+      if (nextTier > unlockedAiTier) return;
+      setSelectedAiTier(nextTier);
   };
 
 
@@ -810,8 +819,7 @@ const Board = ({
         const response = await axios.post('/api/ai/move', {
           board,
           turn,
-          movetime: AI_MOVE_TIME_MS,
-          depth: aiSearchDepth,
+          aiTier: selectedAiLevel.tier,
         });
         if (cancelled) return;
 
@@ -864,7 +872,7 @@ const Board = ({
       aiThinkingRef.current = false;
       setAiThinking(false);
     };
-  }, [aiEngineTeam, aiSearchDepth, board, gameMode, gameState, myTeam, turn, winner]);
+  }, [aiEngineTeam, board, gameMode, gameState, myTeam, selectedAiLevel.tier, turn, winner]);
 
     // ... useEffect for Check ...
   useEffect(() => {
@@ -1118,21 +1126,39 @@ const Board = ({
     const replayChoSetup = choSetup || SETUP_TYPES.MSMS;
     const replayHanSetup = hanSetup || SETUP_TYPES.MSMS;
     const resultType = gameResultMethod || RESULT_METHOD.CHECKMATE;
+    let cancelled = false;
 
-    axios.post('/api/games/ai', {
-      myTeam,
-      winnerTeam: winner,
-      choSetup: replayChoSetup,
-      hanSetup: replayHanSetup,
-      moveLog,
-      resultType,
-      startedAt: gameStartedAt || new Date().toISOString(),
-      endedAt: new Date().toISOString(),
-    }).catch((err) => {
-      console.error('Failed to save AI replay:', err);
-      showToast(tRef.current('board.alerts.aiReplaySaveFailed'));
-    });
-  }, [choSetup, gameMode, gameResultMethod, gameStartedAt, gameState, hanSetup, moveLog, myTeam, showToast, token, user?.id, winner]);
+    const saveAiReplay = async () => {
+      try {
+        const response = await axios.post('/api/games/ai', {
+          myTeam,
+          winnerTeam: winner,
+          choSetup: replayChoSetup,
+          hanSetup: replayHanSetup,
+          moveLog,
+          resultType,
+          startedAt: gameStartedAt || new Date().toISOString(),
+          endedAt: new Date().toISOString(),
+          aiTier: selectedAiLevel.tier,
+        });
+        if (cancelled) return;
+        await refreshUser();
+        if (response.data?.unlock?.unlocked && response.data.unlock.justUnlockedTier != null) {
+          const unlockedLevel = getAiLevel(response.data.unlock.justUnlockedTier);
+          showToast(tRef.current('board.aiUnlockToast', { rank: unlockedLevel.label }));
+        }
+      } catch (err) {
+        console.error('Failed to save AI replay:', err);
+        showToast(tRef.current('board.alerts.aiReplaySaveFailed'));
+      }
+    };
+
+    saveAiReplay();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [choSetup, gameMode, gameResultMethod, gameStartedAt, gameState, hanSetup, moveLog, myTeam, refreshUser, selectedAiLevel.tier, showToast, token, user?.id, winner]);
 
 
   // Replay Controls
@@ -1252,7 +1278,7 @@ const Board = ({
       });
     } else {
       if (gameMode === 'ai') {
-        setPlayerPopupInfo({ userId: null, name: 'AI', rank: '-', wins: 0, losses: 0, rating: null, isAi: true, isMe: false });
+        setPlayerPopupInfo({ userId: null, name: aiOpponentName, rank: selectedAiLevel.label, wins: 0, losses: 0, rating: null, isAi: true, isMe: false });
         return;
       }
       if (!opponentInfo) return;
@@ -1512,27 +1538,20 @@ const Board = ({
                                         <span className="material-icons-round">smart_toy</span>
                                         <span>{t('board.aiLevelLabel')}</span>
                                     </div>
-                                    <div className="setup-fs-slider-row">
-                                        <input
-                                            className="setup-fs-slider"
-                                            type="range"
-                                            min={AI_MIN_DEPTH}
-                                            max={AI_MAX_DEPTH}
-                                            step={1}
-                                            value={aiSearchDepth}
-                                            onChange={(e) => handleAiDepthChange(e.target.value)}
-                                        />
-                                        <span className="setup-fs-depth-value">{t('board.aiLevelDepthValue', { depth: aiSearchDepth })}</span>
+                                    <div className="setup-fs-level-meta">
+                                        <span className="setup-fs-level-current">{t('board.aiLevelSelected', { rank: selectedAiLevel.label })}</span>
+                                        <span className="setup-fs-level-unlocked">{t('board.aiLevelUnlocked', { rank: getAiLevel(unlockedAiTier).label })}</span>
                                     </div>
                                     <div className="setup-fs-presets">
-                                        {AI_DEPTH_PRESETS.map((depth) => (
+                                        {AI_LEVELS.map((level) => (
                                             <button
-                                                key={`ai-depth-${depth}`}
+                                                key={`ai-level-${level.tier}`}
                                                 type="button"
-                                                className={`setup-fs-preset-btn ${aiSearchDepth === depth ? 'active' : ''}`}
-                                                onClick={() => handleAiDepthChange(depth)}
+                                                className={`setup-fs-preset-btn ${selectedAiLevel.tier === level.tier ? 'active' : ''}`}
+                                                onClick={() => handleAiLevelSelect(level.tier)}
+                                                disabled={level.tier > unlockedAiTier}
                                             >
-                                                {t('board.aiLevelPreset', { depth })}
+                                                {level.label}
                                             </button>
                                         ))}
                                     </div>
@@ -1744,7 +1763,7 @@ const Board = ({
                     </div>
                     <div className="game-player-text">
                         <span className="game-player-name">
-                            {isNetworkGame ? (opponentInfo?.nickname || t('board.opponent')) : (gameMode === 'ai' ? 'AI' : t('board.opponent'))}
+                            {isNetworkGame ? (opponentInfo?.nickname || t('board.opponent')) : (gameMode === 'ai' ? aiOpponentName : t('board.opponent'))}
                         </span>
                         <span className="game-player-score">{topTeam === TEAM.CHO ? scores.cho : scores.han}{t('board.pointUnit')}</span>
                         {isNetworkGame && topClockLabel && (
@@ -1796,7 +1815,7 @@ const Board = ({
                             </div>
                             <div>
                                 <p className="player-popup-name">{playerPopupInfo.name}</p>
-                                <p className="player-popup-rank">{playerPopupInfo.isAi ? 'AI Engine' : playerPopupInfo.rank}</p>
+                                <p className="player-popup-rank">{playerPopupInfo.rank}</p>
                             </div>
                         </div>
                         {!playerPopupInfo.isAi && (

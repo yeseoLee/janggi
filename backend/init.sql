@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS users (
     rank_wins INTEGER DEFAULT 0,
     rank_losses INTEGER DEFAULT 0,
     rating INTEGER DEFAULT 1000,
+    ai_unlocked_tier INTEGER DEFAULT 0,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 

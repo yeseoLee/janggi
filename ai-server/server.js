@@ -6,11 +6,25 @@ const PORT = Number(process.env.PORT || 4000);
 const STOCKFISH_PATH = process.env.STOCKFISH_PATH || '/usr/local/bin/fairy-stockfish';
 const AI_VARIANT = process.env.AI_VARIANT || 'janggi';
 const DEFAULT_MOVE_TIME_MS = Number(process.env.AI_MOVE_TIME_MS || 700);
+const DEFAULT_SKILL_LEVEL = Number(process.env.AI_SKILL_LEVEL || 0);
+const DEFAULT_UCI_ELO = Number(process.env.AI_UCI_ELO || 1500);
 
 const clampMoveTime = (value) => {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return DEFAULT_MOVE_TIME_MS;
   return Math.max(100, Math.min(5000, Math.floor(parsed)));
+};
+
+const clampSkillLevel = (value) => {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return DEFAULT_SKILL_LEVEL;
+  return Math.max(-20, Math.min(20, Math.floor(parsed)));
+};
+
+const clampUciElo = (value) => {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return DEFAULT_UCI_ELO;
+  return Math.max(1000, Math.min(3200, Math.floor(parsed)));
 };
 
 class FairyStockfishEngine {
@@ -127,10 +141,15 @@ class FairyStockfishEngine {
     });
   }
 
-  async getBestMove({ fen, movetime, depth }) {
+  async getBestMove({ fen, movetime, depth, skillLevel, useLimitStrength, uciElo }) {
     await this.ensureInitialized();
 
     return this.enqueue(async () => {
+      this.send(`setoption name Skill Level value ${clampSkillLevel(skillLevel)}`);
+      this.send(`setoption name UCI_LimitStrength value ${useLimitStrength ? 'true' : 'false'}`);
+      this.send(`setoption name UCI_Elo value ${clampUciElo(uciElo)}`);
+      await this.commandAndWait('isready', (line) => line === 'readyok', 12000);
+
       this.send(`position fen ${fen}`);
 
       const goCommand =
@@ -191,7 +210,7 @@ app.get('/health', (_req, res) => {
 });
 
 app.post('/move', async (req, res) => {
-  const { fen, movetime, depth } = req.body || {};
+  const { fen, movetime, depth, skillLevel, useLimitStrength, uciElo } = req.body || {};
   if (typeof fen !== 'string' || fen.trim().length === 0) {
     return res.status(400).json({ error: 'fen is required' });
   }
@@ -201,6 +220,9 @@ app.post('/move', async (req, res) => {
       fen: fen.trim(),
       movetime: clampMoveTime(movetime),
       depth: Number.isInteger(depth) ? depth : undefined,
+      skillLevel: clampSkillLevel(skillLevel),
+      useLimitStrength: useLimitStrength === true || useLimitStrength === 'true',
+      uciElo: clampUciElo(uciElo),
     });
     return res.json(result);
   } catch (err) {
