@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/set-state-in-effect */
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import axios from 'axios';
@@ -17,7 +18,6 @@ function ReplayPage() {
     const [viewTeam, setViewTeam] = useState(TEAM.CHO);
     const [invertColor, setInvertColor] = useState(false);
     const [useRotatedPieces, setUseRotatedPieces] = useState(false);
-    const [styleVariant, setStyleVariant] = useState('2');
     const [boardZoomed, setBoardZoomed] = useState(() => localStorage.getItem(BOARD_ZOOM_STORAGE_KEY) === '1');
     const { t } = useLanguage();
 
@@ -72,8 +72,6 @@ function ReplayPage() {
             setInvertColor={setInvertColor}
             useRotatedPieces={useRotatedPieces}
             setUseRotatedPieces={setUseRotatedPieces}
-            styleVariant={styleVariant}
-            setStyleVariant={setStyleVariant}
             boardZoomed={boardZoomed}
             setBoardZoomed={setBoardZoomed}
         />
