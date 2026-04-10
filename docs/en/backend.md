@@ -1,4 +1,4 @@
-# Backend Documentation (Express + Socket.IO + PostgreSQL)
+# Backend Documentation (Go + Gin + Socket.IO-Compatible Realtime + PostgreSQL)
 
 ## 1. Scope
 Backend is the core authoritative service for:
@@ -14,12 +14,12 @@ Backend is the core authoritative service for:
 It also serves built frontend assets in production mode.
 
 ## 2. Runtime Stack
-- Node.js + Express
-- Socket.IO
-- PostgreSQL (`pg` pool)
+- Go + Gin
+- Socket.IO-compatible realtime server
+- PostgreSQL (`pgxpool`)
 - JWT + bcrypt
 
-Entry point: `backend/server.js`
+Entry point: `backend/app.go`
 
 ## 3. Authentication and Session Model
 
@@ -183,19 +183,20 @@ Supported result types include:
 - returns `pass: true` if no parseable move
 
 ## 12. Key Source Files
-- `server.js` – full API/socket orchestration and game lifecycle
-- `src/rank.js` – rank threshold logic
-- `src/coinService.js` – coin spend/recharge service
-- `src/aiMove.js` – board/FEN and engine move parsing
-- `src/streak.js` – max win streak helper
+- `app.go` – service bootstrap, config loading, DB wiring, Gin router startup
+- `http_handlers.go` – REST handlers for auth, social, replay, AI relay, and user APIs
+- `realtime.go` – Socket.IO-compatible realtime orchestration and game lifecycle
+- `rank.go` – rank threshold logic
+- `coins.go` – coin spend/recharge service
+- `ai_move.go` – board/FEN and engine move parsing
+- `streak.go` – max win streak helper
+- `migrations.go` – startup schema migration helpers
 
 ## 13. Run / Test
 ```bash
 cd backend
-npm install
-npm start
-npm test
-npm run test:coverage
+go run .
+go test ./...
 ```
 
 Default service port: `3000`.
