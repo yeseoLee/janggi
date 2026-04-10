@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/google/uuid"
 	socketio "github.com/zishang520/socket.io/servers/socket/v3"
 )
 
@@ -21,15 +20,12 @@ func (app *app) isSessionActive(userID int, sessionID string) bool {
 	}
 
 	key := app.getSessionKey(userID)
-	app.stateMu.Lock()
-	defer app.stateMu.Unlock()
+	app.state.mu.Lock()
+	defer app.state.mu.Unlock()
 
-	record := app.activeSessions[key]
+	record := app.state.activeSessions[key]
 	if record == nil {
-		app.activeSessions[key] = &sessionRecord{
-			SessionID: sessionID,
-			Sockets:   make(map[string]*socketio.Socket),
-		}
+		app.state.activeSessions[key] = buildSessionRecord(sessionID)
 		return true
 	}
 	return record.SessionID == sessionID
@@ -41,10 +37,10 @@ func (app *app) registerSessionSocket(userID int, sessionID string, socket *sock
 	}
 
 	key := app.getSessionKey(userID)
-	app.stateMu.Lock()
-	defer app.stateMu.Unlock()
+	app.state.mu.Lock()
+	defer app.state.mu.Unlock()
 
-	record := app.activeSessions[key]
+	record := app.state.activeSessions[key]
 	if record == nil || record.SessionID != sessionID {
 		return false
 	}
@@ -54,10 +50,10 @@ func (app *app) registerSessionSocket(userID int, sessionID string, socket *sock
 
 func (app *app) unregisterSessionSocket(userID int, sessionID, socketID string) {
 	key := app.getSessionKey(userID)
-	app.stateMu.Lock()
-	defer app.stateMu.Unlock()
+	app.state.mu.Lock()
+	defer app.state.mu.Unlock()
 
-	record := app.activeSessions[key]
+	record := app.state.activeSessions[key]
 	if record == nil || record.SessionID != sessionID {
 		return
 	}
@@ -65,10 +61,10 @@ func (app *app) unregisterSessionSocket(userID int, sessionID, socketID string) 
 }
 
 func (app *app) getSessionSockets(userID int) []*socketio.Socket {
-	app.stateMu.RLock()
-	defer app.stateMu.RUnlock()
+	app.state.mu.RLock()
+	defer app.state.mu.RUnlock()
 
-	record := app.activeSessions[app.getSessionKey(userID)]
+	record := app.state.activeSessions[app.getSessionKey(userID)]
 	if record == nil {
 		return nil
 	}
@@ -99,11 +95,11 @@ func (app *app) terminateSessionSockets(userID int, record *sessionRecord, reaso
 	}
 
 	sockets := make([]*socketio.Socket, 0, len(record.Sockets))
-	app.stateMu.RLock()
+	app.state.mu.RLock()
 	for _, socket := range record.Sockets {
 		sockets = append(sockets, socket)
 	}
-	app.stateMu.RUnlock()
+	app.state.mu.RUnlock()
 
 	for _, socket := range sockets {
 		if socket == nil {
@@ -114,9 +110,9 @@ func (app *app) terminateSessionSockets(userID int, record *sessionRecord, reaso
 		socket.Disconnect(true)
 	}
 
-	app.stateMu.Lock()
+	app.state.mu.Lock()
 	record.Sockets = make(map[string]*socketio.Socket)
-	app.stateMu.Unlock()
+	app.state.mu.Unlock()
 }
 
 func (app *app) setupSocketServer() {
@@ -187,18 +183,19 @@ func (app *app) extractSocketToken(socket *socketio.Socket) string {
 	if authHeader, ok := socket.Handshake().Headers["authorization"]; ok {
 		switch value := authHeader.(type) {
 		case string:
-			if stringsHasPrefix(value, "Bearer ") {
-				return stringsTrimSpace(value[7:])
+			if token := extractBearerToken(value); token != "" {
+				return token
 			}
 		case []string:
-			if len(value) > 0 && stringsHasPrefix(value[0], "Bearer ") {
-				return stringsTrimSpace(value[0][7:])
+			if len(value) > 0 {
+				if token := extractBearerToken(value[0]); token != "" {
+					return token
+				}
 			}
 		case []any:
 			if len(value) > 0 {
-				header := toString(value[0])
-				if stringsHasPrefix(header, "Bearer ") {
-					return stringsTrimSpace(header[7:])
+				if token := extractBearerToken(toString(value[0])); token != "" {
+					return token
 				}
 			}
 		}
@@ -243,9 +240,9 @@ func (app *app) socketAuth(socket *socketio.Socket) (socketAuth, bool) {
 }
 
 func (app *app) forceResignForSocket(socketID string) bool {
-	app.stateMu.RLock()
+	app.state.mu.RLock()
 	roomID, game := app.findGameBySocketIDLocked(socketID)
-	app.stateMu.RUnlock()
+	app.state.mu.RUnlock()
 	if roomID == "" || game == nil || game.Finished {
 		return false
 	}
@@ -291,15 +288,15 @@ func (app *app) onFindMatch(socket *socketio.Socket, args ...any) {
 	userInfo = cloneUserInfo(userInfo)
 	userInfo["id"] = auth.UserID
 
-	app.stateMu.Lock()
-	for _, queued := range app.matchQueue {
+	app.state.mu.Lock()
+	for _, queued := range app.state.matchQueue {
 		if queued.Socket != nil && string(queued.Socket.Id()) == string(socket.Id()) {
-			app.stateMu.Unlock()
+			app.state.mu.Unlock()
 			return
 		}
 	}
-	app.matchQueue = append(app.matchQueue, &queueEntry{Socket: socket, UserInfo: userInfo})
-	app.stateMu.Unlock()
+	app.state.matchQueue = append(app.state.matchQueue, &queueEntry{Socket: socket, UserInfo: userInfo})
+	app.state.mu.Unlock()
 
 	app.tryMatchQueue(context.Background())
 }
@@ -327,7 +324,7 @@ func (app *app) onFriendlyInviteSend(socket *socketio.Socket, args ...any) {
 		return
 	}
 
-	app.cleanupExpiredFriendlyInvites(time.Now().UnixMilli())
+	app.cleanupExpiredFriendlyInvites(app.nowUnixMilli())
 
 	ctx := context.Background()
 	isFriend, err := app.areUsersFriends(ctx, auth.UserID, targetUserID)
@@ -373,18 +370,18 @@ func (app *app) onFriendlyInviteSend(socket *socketio.Socket, args ...any) {
 		return
 	}
 
-	inviteID := uuid.NewString()
-	app.stateMu.Lock()
-	app.pendingFriendlyInvites[inviteID] = &pendingFriendlyInvite{
+	inviteID := app.nextID()
+	app.state.mu.Lock()
+	app.state.pendingFriendlyInvites[inviteID] = &pendingFriendlyInvite{
 		InviteID:    inviteID,
 		FromUserID:  auth.UserID,
 		ToUserID:    targetUserID,
 		FromInfo:    senderInfo,
 		ToInfo:      targetInfo,
-		CreatedAtMS: time.Now().UnixMilli(),
+		CreatedAtMS: app.nowUnixMilli(),
 		Status:      "pending",
 	}
-	app.stateMu.Unlock()
+	app.state.mu.Unlock()
 
 	app.emitToUserSockets(targetUserID, "friendly_invite_received", map[string]any{
 		"inviteId": inviteID,
@@ -406,20 +403,20 @@ func (app *app) onFriendlyInviteDecline(socket *socketio.Socket, args ...any) {
 	}
 
 	inviteID := toString(payload["inviteId"])
-	app.stateMu.Lock()
-	invite := app.pendingFriendlyInvites[inviteID]
+	app.state.mu.Lock()
+	invite := app.state.pendingFriendlyInvites[inviteID]
 	if invite == nil {
-		app.stateMu.Unlock()
+		app.state.mu.Unlock()
 		ack([]any{map[string]any{"ok": true}}, nil)
 		return
 	}
 	if invite.ToUserID != auth.UserID {
-		app.stateMu.Unlock()
+		app.state.mu.Unlock()
 		ack([]any{map[string]any{"ok": false, "error": "NOT_ALLOWED"}}, nil)
 		return
 	}
-	delete(app.pendingFriendlyInvites, inviteID)
-	app.stateMu.Unlock()
+	delete(app.state.pendingFriendlyInvites, inviteID)
+	app.state.mu.Unlock()
 
 	app.emitToUserSockets(invite.FromUserID, "friendly_invite_declined", map[string]any{
 		"inviteId": inviteID,
@@ -441,12 +438,12 @@ func (app *app) onFriendlyInviteAccept(socket *socketio.Socket, args ...any) {
 	}
 
 	inviteID := toString(payload["inviteId"])
-	app.cleanupExpiredFriendlyInvites(time.Now().UnixMilli())
-	app.cleanupExpiredFriendlyMatches(time.Now().UnixMilli())
+	app.cleanupExpiredFriendlyInvites(app.nowUnixMilli())
+	app.cleanupExpiredFriendlyMatches(app.nowUnixMilli())
 
-	app.stateMu.RLock()
-	invite := app.pendingFriendlyInvites[inviteID]
-	app.stateMu.RUnlock()
+	app.state.mu.RLock()
+	invite := app.state.pendingFriendlyInvites[inviteID]
+	app.state.mu.RUnlock()
 	if invite == nil {
 		ack([]any{map[string]any{"ok": false, "error": "INVITE_NOT_FOUND"}}, nil)
 		return
@@ -463,9 +460,9 @@ func (app *app) onFriendlyInviteAccept(socket *socketio.Socket, args ...any) {
 		return
 	}
 	if blocked {
-		app.stateMu.Lock()
-		delete(app.pendingFriendlyInvites, inviteID)
-		app.stateMu.Unlock()
+		app.state.mu.Lock()
+		delete(app.state.pendingFriendlyInvites, inviteID)
+		app.state.mu.Unlock()
 		ack([]any{map[string]any{"ok": false, "error": "BLOCKED_USER"}}, nil)
 		return
 	}
@@ -476,9 +473,9 @@ func (app *app) onFriendlyInviteAccept(socket *socketio.Socket, args ...any) {
 		return
 	}
 	if !stillFriends {
-		app.stateMu.Lock()
-		delete(app.pendingFriendlyInvites, inviteID)
-		app.stateMu.Unlock()
+		app.state.mu.Lock()
+		delete(app.state.pendingFriendlyInvites, inviteID)
+		app.state.mu.Unlock()
 		ack([]any{map[string]any{"ok": false, "error": "NOT_FRIEND"}}, nil)
 		return
 	}
@@ -497,20 +494,20 @@ func (app *app) onFriendlyInviteAccept(socket *socketio.Socket, args ...any) {
 	choPlayer, hanPlayer := app.pickChoHanPlayers(&queueEntry{UserInfo: fromInfo}, &queueEntry{UserInfo: toInfo})
 	choInfo := cloneUserInfo(choPlayer.UserInfo)
 	hanInfo := cloneUserInfo(hanPlayer.UserInfo)
-	matchID := uuid.NewString()
+	matchID := app.nextID()
 
-	app.stateMu.Lock()
-	app.pendingFriendlyMatches[matchID] = &pendingFriendlyMatch{
+	app.state.mu.Lock()
+	app.state.pendingFriendlyMatches[matchID] = &pendingFriendlyMatch{
 		MatchID:     matchID,
 		RoomID:      "friendly_" + matchID,
 		ChoUserID:   mustInt(choInfo["id"]),
 		HanUserID:   mustInt(hanInfo["id"]),
 		ChoInfo:     choInfo,
 		HanInfo:     hanInfo,
-		CreatedAtMS: time.Now().UnixMilli(),
+		CreatedAtMS: app.nowUnixMilli(),
 	}
-	delete(app.pendingFriendlyInvites, inviteID)
-	app.stateMu.Unlock()
+	delete(app.state.pendingFriendlyInvites, inviteID)
+	app.state.mu.Unlock()
 
 	app.emitToUserSockets(invite.FromUserID, "friendly_match_ready", map[string]any{
 		"matchId":  matchID,
@@ -542,11 +539,11 @@ func (app *app) onJoinFriendlyMatch(socket *socketio.Socket, args ...any) {
 	}
 
 	matchID := toString(payload["matchId"])
-	app.cleanupExpiredFriendlyMatches(time.Now().UnixMilli())
+	app.cleanupExpiredFriendlyMatches(app.nowUnixMilli())
 
-	app.stateMu.Lock()
-	match := app.pendingFriendlyMatches[matchID]
-	app.stateMu.Unlock()
+	app.state.mu.Lock()
+	match := app.state.pendingFriendlyMatches[matchID]
+	app.state.mu.Unlock()
 	if match == nil {
 		ack([]any{map[string]any{"ok": false, "error": "MATCH_NOT_FOUND"}}, nil)
 		return
@@ -564,8 +561,8 @@ func (app *app) onJoinFriendlyMatch(socket *socketio.Socket, args ...any) {
 	}
 
 	roomID := match.RoomID
-	app.stateMu.Lock()
-	game := app.activeGames[roomID]
+	app.state.mu.Lock()
+	game := app.state.activeGames[roomID]
 	if game == nil {
 		game = app.buildRealtimeGameState(roomID, &teamPlayer{ID: match.ChoUserID, UserInfo: cloneUserInfo(match.ChoInfo)}, &teamPlayer{ID: match.HanUserID, UserInfo: cloneUserInfo(match.HanInfo)}, "friendly")
 	}
@@ -579,9 +576,9 @@ func (app *app) onJoinFriendlyMatch(socket *socketio.Socket, args ...any) {
 		game.Han.UserInfo = cloneUserInfo(match.HanInfo)
 	}
 	if game.Cho.Socket != nil && game.Han.Socket != nil {
-		delete(app.pendingFriendlyMatches, matchID)
+		delete(app.state.pendingFriendlyMatches, matchID)
 	}
-	app.stateMu.Unlock()
+	app.state.mu.Unlock()
 
 	socket.Join(socketio.Room(roomID))
 
@@ -607,9 +604,9 @@ func (app *app) onSetupPhaseStarted(socket *socketio.Socket, args ...any) {
 		return
 	}
 
-	app.stateMu.RLock()
-	game := app.activeGames[roomID]
-	app.stateMu.RUnlock()
+	app.state.mu.RLock()
+	game := app.state.activeGames[roomID]
+	app.state.mu.RUnlock()
 	if game == nil || game.Finished || app.hasGameStarted(game) {
 		return
 	}
@@ -624,7 +621,7 @@ func (app *app) onSetupPhaseStarted(socket *socketio.Socket, args ...any) {
 		return
 	}
 
-	if game.SetupPhaseTeam == team && game.SetupPhaseDeadlineAt > time.Now().UnixMilli() {
+	if game.SetupPhaseTeam == team && game.SetupPhaseDeadlineAt > app.nowUnixMilli() {
 		_ = socket.Emit("setup_timer_sync", app.buildSetupTimerSyncPayload(game, setupSelectionTimeoutMS))
 		return
 	}
@@ -637,16 +634,16 @@ func (app *app) onSubmitSetup(socket *socketio.Socket, args ...any) {
 	team := toString(payload["team"])
 	setupType := toString(payload["setupType"])
 
-	app.stateMu.Lock()
-	game := app.activeGames[roomID]
+	app.state.mu.Lock()
+	game := app.state.activeGames[roomID]
 	if game == nil || !isValidTeam(team) {
-		app.stateMu.Unlock()
+		app.state.mu.Unlock()
 		return
 	}
 	actorTeam := app.getTeamBySocketID(game, string(socket.Id()))
 	expectedTeam := app.getExpectedSetupTeam(game)
 	if actorTeam == "" || actorTeam != team || expectedTeam == "" || expectedTeam != team {
-		app.stateMu.Unlock()
+		app.state.mu.Unlock()
 		return
 	}
 
@@ -657,7 +654,7 @@ func (app *app) onSubmitSetup(socket *socketio.Socket, args ...any) {
 	}
 	startGameNow := app.hasGameStarted(game) && game.TurnStartedAt == 0
 	nextTeam := app.getExpectedSetupTeam(game)
-	app.stateMu.Unlock()
+	app.state.mu.Unlock()
 
 	app.emitToRoom(roomID, "opponent_setup", map[string]any{
 		"team":      team,
@@ -665,20 +662,20 @@ func (app *app) onSubmitSetup(socket *socketio.Socket, args ...any) {
 	})
 
 	if startGameNow {
-		app.stateMu.Lock()
-		game = app.activeGames[roomID]
+		app.state.mu.Lock()
+		game = app.state.activeGames[roomID]
 		if game != nil {
 			app.clearSetupTimeout(game)
 			game.SetupPhaseTeam = ""
 			game.SetupPhaseStartedAt = 0
 			game.SetupPhaseDeadlineAt = 0
-			now := time.Now()
+			now := app.nowTime()
 			game.StartTime = &now
-			app.beginNextTurn(game, teamCho, time.Now().UnixMilli())
+			app.beginNextTurn(game, teamCho, app.nowUnixMilli())
 		}
-		app.stateMu.Unlock()
+		app.state.mu.Unlock()
 
-		app.emitClockSync(roomID, time.Now().UnixMilli())
+		app.emitClockSync(roomID, app.nowUnixMilli())
 		app.scheduleTurnTimeout(roomID)
 		return
 	}
@@ -693,19 +690,19 @@ func (app *app) onCancelMatch(socket *socketio.Socket, args ...any) {
 	roomID := toString(payload["room"])
 	reason := toString(payload["reason"])
 
-	app.stateMu.Lock()
-	filtered := make([]*queueEntry, 0, len(app.matchQueue))
-	for _, queued := range app.matchQueue {
+	app.state.mu.Lock()
+	filtered := make([]*queueEntry, 0, len(app.state.matchQueue))
+	for _, queued := range app.state.matchQueue {
 		if queued.Socket == nil || string(queued.Socket.Id()) == string(socket.Id()) {
 			continue
 		}
 		filtered = append(filtered, queued)
 	}
-	app.matchQueue = filtered
+	app.state.matchQueue = filtered
 	if roomID == "" {
 		roomID, _ = app.findGameBySocketIDLocked(string(socket.Id()))
 	}
-	app.stateMu.Unlock()
+	app.state.mu.Unlock()
 
 	if roomID != "" {
 		app.cancelPreGameMatch(roomID, defaultString(reason, "cancelled"), string(socket.Id()))
@@ -721,22 +718,22 @@ func (app *app) onMove(socket *socketio.Socket, args ...any) {
 		return
 	}
 
-	app.stateMu.Lock()
-	game := app.activeGames[roomID]
+	app.state.mu.Lock()
+	game := app.state.activeGames[roomID]
 	if game == nil || game.Finished || !app.hasGameStarted(game) {
-		app.stateMu.Unlock()
+		app.state.mu.Unlock()
 		return
 	}
 	actorTeam := app.getTeamBySocketID(game, string(socket.Id()))
 	if actorTeam == "" || game.NextTurn != actorTeam {
-		app.stateMu.Unlock()
+		app.state.mu.Unlock()
 		return
 	}
 
-	nowMS := time.Now().UnixMilli()
+	nowMS := app.nowUnixMilli()
 	timeoutTeam := app.applyElapsedToActiveTurn(game, nowMS)
 	if timeoutTeam != "" {
-		app.stateMu.Unlock()
+		app.state.mu.Unlock()
 		winnerTeam := getOpponentTeam(timeoutTeam)
 		app.emitClockSync(roomID, nowMS)
 		app.emitToRoom(roomID, "game_over", map[string]any{"winner": winnerTeam, "type": "time", "timeoutTeam": timeoutTeam})
@@ -755,7 +752,7 @@ func (app *app) onMove(socket *socketio.Socket, args ...any) {
 		At:   nowISO,
 	})
 	app.beginNextTurn(game, getOpponentTeam(actorTeam), nowMS)
-	app.stateMu.Unlock()
+	app.state.mu.Unlock()
 
 	_ = socket.Broadcast().To(socketio.Room(roomID)).Emit("move", map[string]any{
 		"from": move.From,
@@ -769,22 +766,22 @@ func (app *app) onPass(socket *socketio.Socket, args ...any) {
 	payload := payloadMap(args)
 	roomID := toString(payload["room"])
 
-	app.stateMu.Lock()
-	game := app.activeGames[roomID]
+	app.state.mu.Lock()
+	game := app.state.activeGames[roomID]
 	if game == nil || game.Finished || !app.hasGameStarted(game) {
-		app.stateMu.Unlock()
+		app.state.mu.Unlock()
 		return
 	}
 	actorTeam := app.getTeamBySocketID(game, string(socket.Id()))
 	if actorTeam == "" || game.NextTurn != actorTeam {
-		app.stateMu.Unlock()
+		app.state.mu.Unlock()
 		return
 	}
 
-	nowMS := time.Now().UnixMilli()
+	nowMS := app.nowUnixMilli()
 	timeoutTeam := app.applyElapsedToActiveTurn(game, nowMS)
 	if timeoutTeam != "" {
-		app.stateMu.Unlock()
+		app.state.mu.Unlock()
 		winnerTeam := getOpponentTeam(timeoutTeam)
 		app.emitClockSync(roomID, nowMS)
 		app.emitToRoom(roomID, "game_over", map[string]any{"winner": winnerTeam, "type": "time", "timeoutTeam": timeoutTeam})
@@ -799,7 +796,7 @@ func (app *app) onPass(socket *socketio.Socket, args ...any) {
 		At:   passTimestamp,
 	})
 	app.beginNextTurn(game, getOpponentTeam(actorTeam), nowMS)
-	app.stateMu.Unlock()
+	app.state.mu.Unlock()
 
 	_ = socket.Broadcast().To(socketio.Room(roomID)).Emit("pass_turn", map[string]any{
 		"team": actorTeam,
@@ -813,9 +810,9 @@ func (app *app) onResign(socket *socketio.Socket, args ...any) {
 	payload := payloadMap(args)
 	roomID := toString(payload["room"])
 
-	app.stateMu.RLock()
-	game := app.activeGames[roomID]
-	app.stateMu.RUnlock()
+	app.state.mu.RLock()
+	game := app.state.activeGames[roomID]
+	app.state.mu.RUnlock()
 	if game == nil || game.Finished {
 		return
 	}
@@ -842,9 +839,9 @@ func (app *app) onCheckmate(socket *socketio.Socket, args ...any) {
 	roomID := toString(payload["room"])
 	winner := toString(payload["winner"])
 
-	app.stateMu.RLock()
-	game := app.activeGames[roomID]
-	app.stateMu.RUnlock()
+	app.state.mu.RLock()
+	game := app.state.activeGames[roomID]
+	app.state.mu.RUnlock()
 	if game == nil || game.Finished || !isValidTeam(winner) || !app.hasGameStarted(game) {
 		return
 	}
@@ -867,9 +864,9 @@ func (app *app) onFinishByRule(socket *socketio.Socket, args ...any) {
 	winner := toString(payload["winner"])
 	resultType := stringsToLower(stringsTrimSpace(toString(payload["type"])))
 
-	app.stateMu.RLock()
-	game := app.activeGames[roomID]
-	app.stateMu.RUnlock()
+	app.state.mu.RLock()
+	game := app.state.activeGames[roomID]
+	app.state.mu.RUnlock()
 	if game == nil || game.Finished || !app.hasGameStarted(game) || !isValidTeam(winner) {
 		return
 	}
@@ -887,17 +884,17 @@ func (app *app) onDisconnect(socket *socketio.Socket, args ...any) {
 		app.unregisterSessionSocket(auth.UserID, auth.SessionID, string(socket.Id()))
 	}
 
-	app.stateMu.Lock()
-	filtered := make([]*queueEntry, 0, len(app.matchQueue))
-	for _, queued := range app.matchQueue {
+	app.state.mu.Lock()
+	filtered := make([]*queueEntry, 0, len(app.state.matchQueue))
+	for _, queued := range app.state.matchQueue {
 		if queued.Socket == nil || string(queued.Socket.Id()) == string(socket.Id()) {
 			continue
 		}
 		filtered = append(filtered, queued)
 	}
-	app.matchQueue = filtered
+	app.state.matchQueue = filtered
 	roomID, game := app.findGameBySocketIDLocked(string(socket.Id()))
-	app.stateMu.Unlock()
+	app.state.mu.Unlock()
 	if roomID == "" || game == nil || game.Finished {
 		return
 	}
@@ -921,7 +918,7 @@ func (app *app) emitToRoom(roomID, event string, payload any) {
 }
 
 func (app *app) findGameBySocketIDLocked(socketID string) (string, *gameState) {
-	for roomID, game := range app.activeGames {
+	for roomID, game := range app.state.activeGames {
 		if app.getTeamBySocketID(game, socketID) != "" {
 			return roomID, game
 		}
@@ -1165,9 +1162,9 @@ func clockOrFallback(game *gameState, team string, fallback teamClock) teamClock
 }
 
 func (app *app) emitClockSync(roomID string, nowMS int64) {
-	app.stateMu.RLock()
-	game := app.activeGames[roomID]
-	app.stateMu.RUnlock()
+	app.state.mu.RLock()
+	game := app.state.activeGames[roomID]
+	app.state.mu.RUnlock()
 	if game == nil || game.Finished || !app.hasGameStarted(game) {
 		return
 	}
@@ -1214,22 +1211,22 @@ func (app *app) buildSetupTimerSyncPayload(game *gameState, durationMS int) map[
 }
 
 func (app *app) startSetupPhase(roomID, team string, durationMS int) bool {
-	app.stateMu.Lock()
-	game := app.activeGames[roomID]
+	app.state.mu.Lock()
+	game := app.state.activeGames[roomID]
 	if game == nil || game.Finished || app.hasGameStarted(game) || !isValidTeam(team) {
-		app.stateMu.Unlock()
+		app.state.mu.Unlock()
 		return false
 	}
 
 	app.clearSetupTimeout(game)
-	nowMS := time.Now().UnixMilli()
+	nowMS := app.nowUnixMilli()
 	game.SetupPhaseTeam = team
 	game.SetupPhaseStartedAt = nowMS
 	game.SetupPhaseDeadlineAt = nowMS + int64(durationMS)
 	game.SetupTimeout = time.AfterFunc(time.Duration(durationMS)*time.Millisecond, func() {
-		app.stateMu.RLock()
-		currentGame := app.activeGames[roomID]
-		app.stateMu.RUnlock()
+		app.state.mu.RLock()
+		currentGame := app.state.activeGames[roomID]
+		app.state.mu.RUnlock()
 		if currentGame == nil || currentGame.Finished || app.hasGameStarted(currentGame) {
 			return
 		}
@@ -1240,17 +1237,17 @@ func (app *app) startSetupPhase(roomID, team string, durationMS int) bool {
 		app.cancelPreGameMatch(roomID, "setup_timeout", "")
 	})
 	payload := app.buildSetupTimerSyncPayload(game, durationMS)
-	app.stateMu.Unlock()
+	app.state.mu.Unlock()
 
 	app.emitToRoom(roomID, "setup_timer_sync", payload)
 	return true
 }
 
 func (app *app) scheduleTurnTimeout(roomID string) {
-	app.stateMu.Lock()
-	game := app.activeGames[roomID]
+	app.state.mu.Lock()
+	game := app.state.activeGames[roomID]
 	if game == nil || game.Finished || !app.hasGameStarted(game) || !isValidTeam(game.NextTurn) || game.TurnStartedAt == 0 {
-		app.stateMu.Unlock()
+		app.state.mu.Unlock()
 		return
 	}
 	app.clearTurnTimeout(game)
@@ -1259,15 +1256,15 @@ func (app *app) scheduleTurnTimeout(roomID string) {
 		timeoutMS = 0
 	}
 	game.TurnTimeout = time.AfterFunc(time.Duration(timeoutMS)*time.Millisecond, func() {
-		app.stateMu.Lock()
-		currentGame := app.activeGames[roomID]
+		app.state.mu.Lock()
+		currentGame := app.state.activeGames[roomID]
 		if currentGame == nil || currentGame.Finished || !app.hasGameStarted(currentGame) {
-			app.stateMu.Unlock()
+			app.state.mu.Unlock()
 			return
 		}
-		nowMS := time.Now().UnixMilli()
+		nowMS := app.nowUnixMilli()
 		timeoutTeam := app.applyElapsedToActiveTurn(currentGame, nowMS)
-		app.stateMu.Unlock()
+		app.state.mu.Unlock()
 
 		if timeoutTeam == "" {
 			app.emitClockSync(roomID, nowMS)
@@ -1283,7 +1280,7 @@ func (app *app) scheduleTurnTimeout(roomID string) {
 		})
 		app.processGameEnd(context.Background(), roomID, winnerTeam, "time")
 	})
-	app.stateMu.Unlock()
+	app.state.mu.Unlock()
 }
 
 func (app *app) beginNextTurn(game *gameState, nextTurn string, nowMS int64) {
@@ -1296,24 +1293,24 @@ func (app *app) beginNextTurn(game *gameState, nextTurn string, nowMS int64) {
 }
 
 func (app *app) cancelPreGameMatch(roomID, reason, cancelledBy string) bool {
-	app.stateMu.Lock()
-	game := app.activeGames[roomID]
+	app.state.mu.Lock()
+	game := app.state.activeGames[roomID]
 	if game == nil || game.Finished || app.hasGameStarted(game) {
-		app.stateMu.Unlock()
+		app.state.mu.Unlock()
 		return false
 	}
 	app.clearTurnTimeout(game)
 	app.clearSetupTimeout(game)
-	delete(app.activeGames, roomID)
-	for matchID, pendingMatch := range app.pendingFriendlyMatches {
+	delete(app.state.activeGames, roomID)
+	for matchID, pendingMatch := range app.state.pendingFriendlyMatches {
 		if pendingMatch != nil && pendingMatch.RoomID == roomID {
-			delete(app.pendingFriendlyMatches, matchID)
+			delete(app.state.pendingFriendlyMatches, matchID)
 			break
 		}
 	}
 	choSocket := game.Cho.Socket
 	hanSocket := game.Han.Socket
-	app.stateMu.Unlock()
+	app.state.mu.Unlock()
 
 	app.emitToRoom(roomID, "match_cancelled", map[string]any{"reason": reason, "cancelledBy": emptyToNil(cancelledBy)})
 	if choSocket != nil {
@@ -1337,7 +1334,7 @@ func (app *app) buildRealtimeGameState(roomID string, choUser, hanUser *teamPlay
 			teamHan: createInitialTeamClock(),
 		},
 	}
-	app.activeGames[roomID] = game
+	app.state.activeGames[roomID] = game
 	return game
 }
 
@@ -1360,28 +1357,28 @@ func (app *app) pickChoHanPlayers(left, right *queueEntry) (*queueEntry, *queueE
 		return right, left
 	}
 
-	if time.Now().UnixNano()%2 == 0 {
+	if app.nowTime().UnixNano()%2 == 0 {
 		return left, right
 	}
 	return right, left
 }
 
 func (app *app) cleanupQueueDisconnectedSockets() {
-	app.stateMu.Lock()
-	defer app.stateMu.Unlock()
+	app.state.mu.Lock()
+	defer app.state.mu.Unlock()
 
-	filtered := make([]*queueEntry, 0, len(app.matchQueue))
-	for _, queued := range app.matchQueue {
+	filtered := make([]*queueEntry, 0, len(app.state.matchQueue))
+	for _, queued := range app.state.matchQueue {
 		if queued != nil && queued.Socket != nil && queued.Socket.Connected() {
 			filtered = append(filtered, queued)
 		}
 	}
-	app.matchQueue = filtered
+	app.state.matchQueue = filtered
 }
 
 func (app *app) tryMatchQueue(ctx context.Context) {
-	app.matchMu.Lock()
-	defer app.matchMu.Unlock()
+	app.state.matchMu.Lock()
+	defer app.state.matchMu.Unlock()
 
 	app.cleanupQueueDisconnectedSockets()
 	for {
@@ -1396,9 +1393,9 @@ func (app *app) tryMatchQueue(ctx context.Context) {
 }
 
 func (app *app) pickOnlineMatchPairFromQueue(ctx context.Context) (*queueEntry, *queueEntry) {
-	app.stateMu.RLock()
-	snapshot := append([]*queueEntry(nil), app.matchQueue...)
-	app.stateMu.RUnlock()
+	app.state.mu.RLock()
+	snapshot := append([]*queueEntry(nil), app.state.matchQueue...)
+	app.state.mu.RUnlock()
 	if len(snapshot) < 2 {
 		return nil, nil
 	}
@@ -1422,10 +1419,10 @@ func (app *app) pickOnlineMatchPairFromQueue(ctx context.Context) (*queueEntry, 
 			leftID := string(left.Socket.Id())
 			rightID := string(right.Socket.Id())
 
-			app.stateMu.Lock()
+			app.state.mu.Lock()
 			var actualLeft, actualRight *queueEntry
-			filtered := make([]*queueEntry, 0, len(app.matchQueue))
-			for _, queued := range app.matchQueue {
+			filtered := make([]*queueEntry, 0, len(app.state.matchQueue))
+			for _, queued := range app.state.matchQueue {
 				if queued == nil || queued.Socket == nil {
 					continue
 				}
@@ -1445,11 +1442,11 @@ func (app *app) pickOnlineMatchPairFromQueue(ctx context.Context) (*queueEntry, 
 				filtered = append(filtered, queued)
 			}
 			if actualLeft != nil && actualRight != nil {
-				app.matchQueue = filtered
-				app.stateMu.Unlock()
+				app.state.matchQueue = filtered
+				app.state.mu.Unlock()
 				return actualLeft, actualRight
 			}
-			app.stateMu.Unlock()
+			app.state.mu.Unlock()
 		}
 	}
 	return nil, nil
@@ -1460,7 +1457,7 @@ func (app *app) createOnlineMatch(choPlayer, hanPlayer *queueEntry) {
 	choPlayer.Socket.Join(socketio.Room(roomID))
 	hanPlayer.Socket.Join(socketio.Room(roomID))
 
-	app.stateMu.Lock()
+	app.state.mu.Lock()
 	game := app.buildRealtimeGameState(roomID, &teamPlayer{
 		ID:       mustInt(choPlayer.UserInfo["id"]),
 		SocketID: string(choPlayer.Socket.Id()),
@@ -1473,7 +1470,7 @@ func (app *app) createOnlineMatch(choPlayer, hanPlayer *queueEntry) {
 		UserInfo: cloneUserInfo(hanPlayer.UserInfo),
 	}, "online")
 	setupTimer := app.buildSetupTimerSyncPayload(game, setupSelectionTimeoutMS)
-	app.stateMu.Unlock()
+	app.state.mu.Unlock()
 
 	_ = choPlayer.Socket.Emit("match_found", map[string]any{
 		"room":       roomID,
@@ -1492,30 +1489,30 @@ func (app *app) createOnlineMatch(choPlayer, hanPlayer *queueEntry) {
 }
 
 func (app *app) cleanupExpiredFriendlyInvites(nowMS int64) {
-	app.stateMu.Lock()
-	defer app.stateMu.Unlock()
-	for inviteID, invite := range app.pendingFriendlyInvites {
+	app.state.mu.Lock()
+	defer app.state.mu.Unlock()
+	for inviteID, invite := range app.state.pendingFriendlyInvites {
 		if invite != nil && nowMS-invite.CreatedAtMS > 60*1000 {
-			delete(app.pendingFriendlyInvites, inviteID)
+			delete(app.state.pendingFriendlyInvites, inviteID)
 		}
 	}
 }
 
 func (app *app) cleanupExpiredFriendlyMatches(nowMS int64) {
-	app.stateMu.Lock()
-	defer app.stateMu.Unlock()
-	for matchID, match := range app.pendingFriendlyMatches {
+	app.state.mu.Lock()
+	defer app.state.mu.Unlock()
+	for matchID, match := range app.state.pendingFriendlyMatches {
 		if match != nil && nowMS-match.CreatedAtMS > 5*60*1000 {
-			delete(app.pendingFriendlyMatches, matchID)
+			delete(app.state.pendingFriendlyMatches, matchID)
 		}
 	}
 }
 
 func (app *app) processGameEnd(ctx context.Context, roomID, winnerTeam, resultType string) {
-	app.stateMu.Lock()
-	game := app.activeGames[roomID]
+	app.state.mu.Lock()
+	game := app.state.activeGames[roomID]
 	if game == nil || game.Finished || !isValidTeam(winnerTeam) {
-		app.stateMu.Unlock()
+		app.state.mu.Unlock()
 		return
 	}
 	game.Finished = true
@@ -1532,11 +1529,11 @@ func (app *app) processGameEnd(ctx context.Context, roomID, winnerTeam, resultTy
 	moveLog := append([]moveLogEvent(nil), game.MoveLog...)
 	choSetup := game.ChoSetup
 	hanSetup := game.HanSetup
-	startedAt := time.Now()
+	startedAt := app.nowTime()
 	if game.StartTime != nil {
 		startedAt = *game.StartTime
 	}
-	app.stateMu.Unlock()
+	app.state.mu.Unlock()
 
 	replayPayload := map[string]any{
 		"version":  2,
@@ -1546,7 +1543,7 @@ func (app *app) processGameEnd(ctx context.Context, roomID, winnerTeam, resultTy
 	}
 	replayJSON, _ := json.Marshal(replayPayload)
 	moveLogJSON, _ := json.Marshal(moveLog)
-	endedAt := time.Now()
+	endedAt := app.nowTime()
 
 	tx, err := app.db.Begin(ctx)
 	if err != nil {
@@ -1642,23 +1639,23 @@ func (app *app) processGameEnd(ctx context.Context, roomID, winnerTeam, resultTy
 		return
 	}
 
-	app.stateMu.Lock()
-	delete(app.activeGames, roomID)
-	for matchID, pendingMatch := range app.pendingFriendlyMatches {
+	app.state.mu.Lock()
+	delete(app.state.activeGames, roomID)
+	for matchID, pendingMatch := range app.state.pendingFriendlyMatches {
 		if pendingMatch != nil && pendingMatch.RoomID == roomID {
-			delete(app.pendingFriendlyMatches, matchID)
+			delete(app.state.pendingFriendlyMatches, matchID)
 			break
 		}
 	}
-	app.stateMu.Unlock()
+	app.state.mu.Unlock()
 }
 
 func (app *app) resetGameFinished(roomID string) {
-	app.stateMu.Lock()
-	if game := app.activeGames[roomID]; game != nil {
+	app.state.mu.Lock()
+	if game := app.state.activeGames[roomID]; game != nil {
 		game.Finished = false
 	}
-	app.stateMu.Unlock()
+	app.state.mu.Unlock()
 }
 
 func parseMovePayload(payload map[string]any) (movePayload, bool) {

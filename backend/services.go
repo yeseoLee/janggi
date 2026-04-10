@@ -141,8 +141,15 @@ func normalizeResultType(resultType string) string {
 }
 
 func normalizeMoveLog(moveLog []moveLogEvent) []moveLogEvent {
+	return normalizeMoveLogWithClock(moveLog, time.Now)
+}
+
+func normalizeMoveLogWithClock(moveLog []moveLogEvent, now func() time.Time) []moveLogEvent {
 	if len(moveLog) == 0 {
 		return []moveLogEvent{}
+	}
+	if now == nil {
+		now = time.Now
 	}
 
 	normalized := make([]moveLogEvent, 0, len(moveLog))
@@ -153,7 +160,7 @@ func normalizeMoveLog(moveLog []moveLogEvent) []moveLogEvent {
 
 		at := event.At
 		if stringsTrimSpace(at) == "" {
-			at = time.Now().UTC().Format(time.RFC3339Nano)
+			at = now().UTC().Format(time.RFC3339Nano)
 		}
 
 		switch event.Type {

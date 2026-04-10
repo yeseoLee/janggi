@@ -1,17 +1,12 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"net/http"
-	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/golang-jwt/jwt/v5"
-	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	socketio "github.com/zishang520/socket.io/servers/socket/v3"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -77,29 +72,19 @@ func (app *app) handleLogin(c *gin.Context) {
 
 	userID, _ := toInt(userRow["id"])
 	userKey := app.getSessionKey(userID)
-	app.stateMu.RLock()
-	previousSession := app.activeSessions[userKey]
-	app.stateMu.RUnlock()
+	app.state.mu.RLock()
+	previousSession := app.state.activeSessions[userKey]
+	app.state.mu.RUnlock()
 	if previousSession != nil {
 		app.terminateSessionSockets(userID, previousSession, "duplicate_login")
 	}
 
-	sessionID := uuid.NewString()
-	app.stateMu.Lock()
-	app.activeSessions[userKey] = &sessionRecord{
-		SessionID: sessionID,
-		Sockets:   make(map[string]*socketio.Socket),
-	}
-	app.stateMu.Unlock()
+	sessionID := app.nextID()
+	app.state.mu.Lock()
+	app.state.activeSessions[userKey] = buildSessionRecord(sessionID)
+	app.state.mu.Unlock()
 
-	tokenString, err := jwt.NewWithClaims(jwt.SigningMethodHS256, authClaims{
-		ID:       userID,
-		Username: toString(userRow["username"]),
-		SID:      sessionID,
-		RegisteredClaims: jwt.RegisteredClaims{
-			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour)),
-		},
-	}).SignedString([]byte(app.cfg.JWTSecret))
+	tokenString, err := signAuthToken(app.cfg.JWTSecret, app.nowTime(), userID, toString(userRow["username"]), sessionID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Server error"})
 		return
@@ -737,42 +722,17 @@ func (app *app) handleAIMove(c *gin.Context) {
 	selected := getAILevel(req.AITier)
 	requestedMoveTime := clampMoveTime(selected.MoveTimeMS, app.cfg.AIMoveTimeMS)
 	requestedDepth := clampDepth(selected.Depth, app.cfg.AISearchDepth)
+	level := selected
+	level.MoveTimeMS = requestedMoveTime
+	level.Depth = requestedDepth
 
-	timeout := time.Duration(maxInt(15000, requestedMoveTime*8)) * time.Millisecond
+	timeout := calculateAIMoveTimeout(requestedMoveTime)
 	ctx, cancel := context.WithTimeout(c.Request.Context(), timeout)
 	defer cancel()
 
-	body := map[string]any{
-		"fen":              fen,
-		"movetime":         requestedMoveTime,
-		"depth":            requestedDepth,
-		"skillLevel":       selected.SkillLevel,
-		"useLimitStrength": selected.UseLimitStrength,
-		"uciElo":           selected.UCIElo,
-	}
-	encoded, _ := json.Marshal(body)
-	request, err := http.NewRequestWithContext(ctx, http.MethodPost, app.cfg.AIServiceURL+"/move", bytes.NewReader(encoded))
+	aiResult, err := requestAIResult(ctx, app.client(), app.cfg.AIServiceURL, fen, level)
 	if err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{"error": "Failed to request AI move"})
-		return
-	}
-	request.Header.Set("Content-Type", "application/json")
-
-	response, err := http.DefaultClient.Do(request)
-	if err != nil {
-		c.JSON(http.StatusBadGateway, gin.H{"error": "Failed to request AI move"})
-		return
-	}
-	defer response.Body.Close()
-
-	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		c.JSON(http.StatusBadGateway, gin.H{"error": "AI service error"})
-		return
-	}
-
-	var aiResult map[string]any
-	if err := json.NewDecoder(response.Body).Decode(&aiResult); err != nil {
-		c.JSON(http.StatusBadGateway, gin.H{"error": "AI service error"})
 		return
 	}
 
@@ -809,8 +769,8 @@ func (app *app) handleSaveAIGame(c *gin.Context) {
 	normalizedResultType := normalizeResultType(req.ResultType)
 	safeChoSetup := sanitizeSetup(req.ChoSetup)
 	safeHanSetup := sanitizeSetup(req.HanSetup)
-	startTime := normalizeTimestamp(req.StartedAt, time.Now())
-	endTime := normalizeTimestamp(req.EndedAt, time.Now())
+	startTime := normalizeTimestamp(req.StartedAt, app.nowTime())
+	endTime := normalizeTimestamp(req.EndedAt, app.nowTime())
 	if endTime.Before(startTime) {
 		endTime = startTime
 	}
@@ -913,10 +873,10 @@ func (app *app) handleRecharge(c *gin.Context) {
 func (app *app) handleDeleteMe(c *gin.Context) {
 	claims := currentClaims(c)
 	sessionKey := app.getSessionKey(claims.ID)
-	app.stateMu.Lock()
-	session := app.activeSessions[sessionKey]
-	delete(app.activeSessions, sessionKey)
-	app.stateMu.Unlock()
+	app.state.mu.Lock()
+	session := app.state.activeSessions[sessionKey]
+	delete(app.state.activeSessions, sessionKey)
+	app.state.mu.Unlock()
 
 	if session != nil {
 		app.terminateSessionSockets(claims.ID, session, "account_deleted")

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"net/http"
 	"sync"
 	"time"
 
@@ -9,7 +10,6 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
-	"github.com/jackc/pgx/v5/pgxpool"
 	socketio "github.com/zishang520/socket.io/servers/socket/v3"
 )
 
@@ -40,6 +40,15 @@ type config struct {
 	AIServiceURL  string
 	AIMoveTimeMS  int
 	AISearchDepth int
+}
+
+type database interface {
+	dbQuerier
+	Begin(context.Context) (pgx.Tx, error)
+}
+
+type httpDoer interface {
+	Do(*http.Request) (*http.Response, error)
 }
 
 type authClaims struct {
@@ -136,11 +145,20 @@ type pendingFriendlyMatch struct {
 
 type app struct {
 	cfg *config
-	db  *pgxpool.Pool
+	db  database
 	api *gin.Engine
 	io  *socketio.Server
 
-	stateMu                sync.RWMutex
+	state      *serverState
+	now        func() time.Time
+	newID      func() string
+	httpClient httpDoer
+	distDir    string
+}
+
+type serverState struct {
+	mu sync.RWMutex
+
 	matchMu                sync.Mutex
 	activeSessions         map[string]*sessionRecord
 	activeGames            map[string]*gameState
