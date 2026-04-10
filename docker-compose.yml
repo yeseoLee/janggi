@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   postgres:
     image: postgres:15-alpine
@@ -12,6 +10,12 @@ services:
     volumes:
       - ./backend/init.sql:/docker-entrypoint-initdb.d/init.sql
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U janggi_user -d janggi_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 5s
 
   backend:
     build: ./backend
@@ -28,8 +32,10 @@ services:
       AI_SERVICE_URL: http://ai-server:4000
       AI_MOVE_TIME_MS: 700
     depends_on:
-      - postgres
-      - ai-server
+      postgres:
+        condition: service_healthy
+      ai-server:
+        condition: service_started
 
   frontend:
     build: ./frontend

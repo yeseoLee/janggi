@@ -68,8 +68,8 @@ Documentation includes:
 ## Architecture
 
 - `frontend`: React + Vite + Axios + Socket.IO client
-- `backend`: Express + Socket.IO + PostgreSQL
-- `ai-server`: Express wrapper around Fairy-Stockfish process
+- `backend`: Go + Gin + Socket.IO-compatible realtime server + PostgreSQL
+- `ai-server`: Go + Gin wrapper around a persistent Fairy-Stockfish process
 - `postgres`: persistent DB
 
 ### Docker Compose Services
@@ -129,33 +129,20 @@ docker compose up --build
 
 ## Testing
 
-Backend test scripts:
+Go unit tests:
 ```bash
-npm --prefix backend test
-npm --prefix backend run test:coverage
+cd backend && go test ./...
+cd ../ai-server && go test ./...
 ```
-
-Current backend test coverage baseline (latest run in this repo):
-- Statements: 96.56%
-- Branches: 84.09%
-- Functions: 95%
-- Lines: 96.56%
-
-LCOV output:
-- `backend/coverage/lcov.info`
 
 ## Project Structure
 
 ```text
 janggi/
-├── ai-server/              # Fairy-Stockfish wrapper service
+├── ai-server/              # Go AI wrapper service
 ├── backend/
-│   ├── server.js           # REST + Socket.IO + DB integration
-│   ├── src/
-│   │   ├── aiMove.js       # board <-> FEN, engine move parsing
-│   │   ├── coinService.js
-│   │   └── rank.js
-│   └── test/               # Node test suites
+│   ├── *.go                # REST + Socket.IO + DB integration
+│   └── init.sql
 ├── frontend/
 │   └── src/
 │       ├── components/

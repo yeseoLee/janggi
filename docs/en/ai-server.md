@@ -9,9 +9,13 @@ Responsibilities:
 - expose simple HTTP APIs for backend use
 - keep engine variant and move-time behavior configurable by env
 
-Entry point: `ai-server/server.js`
+Entry point: `ai-server/main.go`
 
 ## 2. Runtime Design
+
+- Go + Gin HTTP server
+- one persistent Fairy-Stockfish subprocess
+- serialized engine command queue guarded inside the service
 
 ### 2.1 Engine Lifecycle
 The service starts one Fairy-Stockfish child process and initializes it with:
@@ -62,7 +66,8 @@ Validation:
 `ai-server/Dockerfile`:
 - builds Fairy-Stockfish from source in a builder stage
 - selects architecture profile by Docker `TARGETARCH`
-- copies built binary into slim Node runtime image
+- builds the Go wrapper in a separate stage
+- copies both binaries into a slim Debian runtime image
 
 This ensures reproducible engine availability in Compose without host dependency.
 
@@ -74,8 +79,8 @@ Backend converts board state to Janggi FEN and passes it here. AI server is inte
 ## 8. Run
 ```bash
 cd ai-server
-npm install
-npm start
+go run .
+go test ./...
 ```
 
 Default port: `4000`.

@@ -9,9 +9,13 @@
 - 백엔드가 호출하기 쉬운 `/move` API 제공
 - 변형(variant)과 탐색 시간 설정 환경변수화
 
-진입점: `ai-server/server.js`
+진입점: `ai-server/main.go`
 
 ## 2. 런타임 설계
+
+- Go + Gin HTTP 서버
+- 단일 Fairy-Stockfish 서브프로세스 재사용
+- 서비스 내부 직렬화 큐로 엔진 명령 보호
 
 ### 2.1 엔진 초기화 순서
 프로세스 시작 후 다음 UCI 명령으로 초기화합니다.
@@ -62,7 +66,8 @@
 `ai-server/Dockerfile`은 멀티스테이지로 동작합니다.
 - 빌드 스테이지에서 Fairy-Stockfish 소스 빌드
 - `TARGETARCH`에 맞는 아키텍처 옵션 선택
-- 런타임 이미지에 바이너리만 복사
+- 별도 스테이지에서 Go 래퍼 바이너리 빌드
+- 최종 Debian 런타임 이미지에 엔진과 래퍼를 함께 복사
 
 즉, 호스트 엔진 설치 없이 Compose 단독 실행이 가능합니다.
 
@@ -77,8 +82,8 @@ AI 서버는 유저/대국 상태를 저장하지 않는 계산 전용 서비스
 ## 8. 실행
 ```bash
 cd ai-server
-npm install
-npm start
+go run .
+go test ./...
 ```
 
 기본 포트: `4000`

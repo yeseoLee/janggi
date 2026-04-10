@@ -1,4 +1,4 @@
-# 백엔드 문서 (Express + Socket.IO + PostgreSQL)
+# 백엔드 문서 (Go + Gin + Socket.IO 호환 실시간 서버 + PostgreSQL)
 
 ## 1. 범위
 백엔드는 서비스의 권한/상태 기준(Authoritative) 계층으로 다음을 담당합니다.
@@ -14,12 +14,12 @@
 운영 환경에서는 프론트 빌드 산출물 정적 서빙도 수행합니다.
 
 ## 2. 런타임 스택
-- Node.js + Express
-- Socket.IO
-- PostgreSQL (`pg`)
+- Go + Gin
+- Socket.IO 호환 실시간 서버
+- PostgreSQL (`pgxpool`)
 - JWT + bcrypt
 
-진입점: `backend/server.js`
+진입점: `backend/app.go`
 
 ## 3. 인증 및 세션 모델
 
@@ -179,19 +179,20 @@ REST 미들웨어도 `sid` 불일치 토큰을 차단하며,
 - 파싱 불가 시 `pass: true`
 
 ## 12. 주요 소스 파일
-- `server.js` – API/소켓/게임 수명주기 통합
-- `src/rank.js` – 급수 승강급 기준
-- `src/coinService.js` – 코인 사용/충전
-- `src/aiMove.js` – FEN/엔진 수 변환
-- `src/streak.js` – 최다 연승 계산
+- `app.go` – 설정 로딩, DB 연결, Gin 라우터 시작
+- `http_handlers.go` – 인증/소셜/기보/AI 중계 등 REST 핸들러
+- `realtime.go` – Socket.IO 호환 실시간 대국 및 수명주기 처리
+- `rank.go` – 급수 승강급 기준
+- `coins.go` – 코인 사용/충전
+- `ai_move.go` – FEN/엔진 수 변환
+- `streak.go` – 최다 연승 계산
+- `migrations.go` – 시작 시 스키마 마이그레이션 보조 로직
 
 ## 13. 실행/테스트
 ```bash
 cd backend
-npm install
-npm start
-npm test
-npm run test:coverage
+go run .
+go test ./...
 ```
 
 기본 포트: `3000`
