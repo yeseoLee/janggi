@@ -19,14 +19,26 @@ RUN case "$TARGETARCH" in \
   && strip stockfish
 
 
-FROM node:20-bookworm-slim
+FROM golang:1.22-bookworm AS builder
+
+WORKDIR /src
+
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY . .
+ARG TARGETARCH
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH:-amd64} go build -trimpath -ldflags="-s -w" -o /out/ai-server .
+
+FROM debian:bookworm-slim
 
 WORKDIR /app
 
-COPY package*.json ./
-RUN npm install --omit=dev
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends ca-certificates \
+  && rm -rf /var/lib/apt/lists/*
 
-COPY server.js ./
+COPY --from=builder /out/ai-server /app/ai-server
 COPY --from=engine-builder /src/Fairy-Stockfish/src/stockfish /usr/local/bin/fairy-stockfish
 
 ENV PORT=4000
@@ -36,4 +48,4 @@ ENV AI_MOVE_TIME_MS=700
 
 EXPOSE 4000
 
-CMD ["node", "server.js"]
+CMD ["/app/ai-server"]

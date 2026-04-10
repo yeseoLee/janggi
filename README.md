@@ -68,8 +68,8 @@ Documentation includes:
 ## Architecture
 
 - `frontend`: React + Vite + Axios + Socket.IO client
-- `backend`: Express + Socket.IO + PostgreSQL
-- `ai-server`: Express wrapper around Fairy-Stockfish process
+- `backend`: Go + Gin + Socket.IO-compatible realtime server + PostgreSQL
+- `ai-server`: Go + Gin wrapper around a persistent Fairy-Stockfish process
 - `postgres`: persistent DB
 
 ### Docker Compose Services
@@ -79,6 +79,8 @@ Documentation includes:
 - `postgres` (port `5432`)
 
 `ai-server` builds Fairy-Stockfish from source and selects build arch for Docker target platform (`amd64`/`arm64`).
+
+Node implementations are preserved under `benchmarks/node-baseline/` for equivalence and benchmark comparison only. They are not the active runtime services anymore.
 
 ## Quick Start
 
@@ -129,33 +131,55 @@ docker compose up --build
 
 ## Testing
 
-Backend test scripts:
+Go unit tests:
 ```bash
-npm --prefix backend test
-npm --prefix backend run test:coverage
+cd backend && go test ./...
+cd ../ai-server && go test ./...
 ```
 
-Current backend test coverage baseline (latest run in this repo):
-- Statements: 96.56%
-- Branches: 84.09%
-- Functions: 95%
-- Lines: 96.56%
+Node baseline tests are still available for reference:
+```bash
+npm --prefix benchmarks/node-baseline/backend test
+```
 
-LCOV output:
-- `backend/coverage/lcov.info`
+### Equivalence Verification
+
+Backend and AI wrapper equivalence can be reproduced with:
+```bash
+docker compose -f docker-compose.equivalence.yml up --build -d
+node scripts/equivalence.cjs
+docker compose -f docker-compose.equivalence.yml down
+```
+
+What this verifies:
+- Node baseline backend vs Go backend with the same REST and Socket.IO scenario set
+- Node baseline ai-server vs Go ai-server against a deterministic fake engine
+- Real Fairy-Stockfish smoke checks for both ai-server implementations
+
+### Benchmark Report
+
+Generate the comparison report and raw metrics:
+```bash
+docker compose -p janggi-bench -f docker-compose.benchmark.yml up --build -d
+node scripts/benchmark.cjs
+docker compose -p janggi-bench -f docker-compose.benchmark.yml down
+```
+
+Outputs:
+- `benchmarks/results/benchmark-results.json`
+- `benchmarks/results/migration-report.md`
 
 ## Project Structure
 
 ```text
 janggi/
-├── ai-server/              # Fairy-Stockfish wrapper service
+├── ai-server/              # Go AI wrapper service
 ├── backend/
-│   ├── server.js           # REST + Socket.IO + DB integration
-│   ├── src/
-│   │   ├── aiMove.js       # board <-> FEN, engine move parsing
-│   │   ├── coinService.js
-│   │   └── rank.js
-│   └── test/               # Node test suites
+│   ├── *.go                # REST + Socket.IO + DB integration
+│   └── init.sql
+├── benchmarks/
+│   ├── node-baseline/      # frozen Node reference servers
+│   └── results/            # generated benchmark artifacts
 ├── frontend/
 │   └── src/
 │       ├── components/
@@ -163,5 +187,7 @@ janggi/
 │       ├── game/
 │       ├── i18n/
 │       └── pages/
-└── docker-compose.yml
+├── docker-compose.yml
+├── docker-compose.equivalence.yml
+└── docker-compose.benchmark.yml
 ```
