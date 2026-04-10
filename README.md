@@ -9,7 +9,7 @@ Detailed EN/KO technical documents are organized per layer/service.
 | Area | English | 한국어 |
 |---|---|---|
 | Frontend | [Frontend Docs](docs/en/frontend.md) | [프론트엔드 문서](docs/ko/frontend.md) |
-| Backend | [Backend Docs](docs/en/backend.md) | [백엔드 문서](docs/ko/backend.md) |
+| API Server | [API Server Docs](docs/en/api-server.md) | [API 서버 문서](docs/ko/api-server.md) |
 | AI Server | [AI Server Docs](docs/en/ai-server.md) | [AI 서버 문서](docs/ko/ai-server.md) |
 | Chat Server | [Chat Server Docs](docs/en/chat-server.md) | [채팅 서버 문서](docs/ko/chat-server.md) |
 
@@ -31,7 +31,7 @@ Documentation includes:
 - AI Match (Fairy-Stockfish)
   - AI entry cost: 1 coin
   - Start flow: AI strength(depth) -> side select(Cho/Han) -> setup select (my setup + AI setup)
-  - Calls backend AI API (`/api/ai/move`) and validates legal moves on frontend
+  - Calls api-server AI API (`/api/ai/move`) and validates legal moves on frontend
   - Undo behavior in AI mode:
     - On player turn: undo 2 plies (player move + AI reply)
     - On AI turn: undo 1 ply
@@ -68,13 +68,13 @@ Documentation includes:
 ## Architecture
 
 - `frontend`: React + Vite + Axios + Socket.IO client
-- `backend`: Go + Gin + Socket.IO-compatible realtime server + PostgreSQL
+- `api-server`: Go + Gin + Socket.IO-compatible realtime server + PostgreSQL
 - `ai-server`: Go + Gin wrapper around a persistent Fairy-Stockfish process
 - `postgres`: persistent DB
 
 ### Docker Compose Services
 - `frontend` (port `80`)
-- `backend` (port `3000`)
+- `api-server` (port `3000`)
 - `ai-server` (port `4000`)
 - `postgres` (port `5432`)
 
@@ -98,7 +98,7 @@ docker compose up --build
 
 ## Environment Notes
 
-### Backend (`docker-compose.yml`)
+### API Server (`docker-compose.yml`)
 - `AI_SERVICE_URL` default: `http://ai-server:4000`
 - `AI_MOVE_TIME_MS` default: `700`
 - `AI_SEARCH_DEPTH` default fallback: `8` (used when client depth is missing)
@@ -131,7 +131,7 @@ docker compose up --build
 
 Go unit tests:
 ```bash
-cd backend && go test ./...
+cd api-server && go test ./...
 cd ../ai-server && go test ./...
 ```
 
@@ -140,8 +140,13 @@ cd ../ai-server && go test ./...
 ```text
 janggi/
 ├── ai-server/              # Go AI wrapper service
-├── backend/
-│   ├── *.go                # REST + Socket.IO + DB integration
+├── api-server/
+│   ├── cmd/api-server/     # executable entrypoint
+│   ├── internal/domain/    # pure rules and value objects
+│   ├── internal/application/
+│   ├── internal/dataaccess/
+│   ├── internal/platform/
+│   ├── internal/presentation/
 │   └── init.sql
 ├── frontend/
 │   └── src/

@@ -75,7 +75,7 @@ This keeps memory bounded and satisfies “recent chat only” behavior.
 
 ## 8. Environment Variables
 - `PORT` (default `4100`)
-- `JWT_SECRET` (must match backend token secret)
+- `JWT_SECRET` (must match api-server token secret)
 - `CHAT_MAX_USERS` (default `1000`)
 - `CHAT_RETENTION_MS` (default `600000`)
 - `CHAT_MAX_MESSAGE_LENGTH` (default `300`)

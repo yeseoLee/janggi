@@ -6,7 +6,7 @@
 Responsibilities:
 - maintain a long-lived engine process
 - serialize engine commands safely (single queue)
-- expose simple HTTP APIs for backend use
+- expose simple HTTP APIs for api-server use
 - keep engine variant and move-time behavior configurable by env
 
 Entry point: `ai-server/main.go`
@@ -53,7 +53,7 @@ Validation:
 
 ## 4. Time/Depth Behavior
 - `movetime` is clamped in server-side guard (100ms to 5000ms)
-- backend may request depth-based search instead of movetime
+- api-server may request depth-based search instead of movetime
 - timeout budget for waiting `bestmove` depends on command type
 
 ## 5. Environment Variables
@@ -72,14 +72,14 @@ Validation:
 This ensures reproducible engine availability in Compose without host dependency.
 
 ## 7. Integration Contract
-Called by backend endpoint `POST /api/ai/move`.
+Called by api-server endpoint `POST /api/ai/move`.
 
-Backend converts board state to Janggi FEN and passes it here. AI server is intentionally stateless regarding users/games and only computes move suggestions.
+API server converts board state to Janggi FEN and passes it here. AI server is intentionally stateless regarding users/games and only computes move suggestions.
 
 ## 8. Run
 ```bash
 cd ai-server
-go run .
+go run ./cmd/ai-server
 go test ./...
 ```
 
