@@ -96,7 +96,7 @@ function MainMenu() {
     try {
       const response = await axios.get('/api/social/friends');
       setFriends(response.data || []);
-    } catch (_err) {
+    } catch {
       showToast(t('social.loadFriendsFailed'));
       setFriends([]);
     } finally {
@@ -249,35 +249,6 @@ function MainMenu() {
   const promotionProgressPercent = Math.min(Math.max((rankNet / rankThreshold) * 100, 0), 100);
   const demotionProgressPercent = Math.min(Math.max(((-rankNet) / rankThreshold) * 100, 0), 100);
 
-  if (token && authLoading && !user) {
-    return <div className="page-loading">{t('replay.loading')}</div>;
-  }
-
-  if (!user) {
-    return (
-      <div className="auth-page">
-        <div className="auth-lattice-bg" />
-        <div className="auth-logo">
-          <div className="auth-logo-diamond">
-            <div className="auth-logo-diamond-bg" />
-            <div className="auth-logo-diamond-inner" />
-            <span className="auth-logo-char">漢</span>
-          </div>
-          <h1>{t('menu.titleSimple')}</h1>
-          <p>Master Janggi</p>
-        </div>
-        <div className="auth-form-card" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-          <Link to="/login" className="auth-submit-btn" style={{ textAlign: 'center', textDecoration: 'none' }}>
-            {t('menu.login')}
-          </Link>
-          <Link to="/register" className="auth-secondary-btn">
-            {t('menu.register')}
-          </Link>
-        </div>
-      </div>
-    );
-  }
-
   const getResultLabel = (game) => {
     const resultMethod = normalizeResultMethod(game.result_type);
     const methodLabel = t(`replay.result.${resultMethod}`);
@@ -337,6 +308,35 @@ function MainMenu() {
     if (!el) return;
     el.scrollTop = el.scrollHeight;
   }, [chatMessages]);
+
+  if (token && authLoading && !user) {
+    return <div className="page-loading">{t('replay.loading')}</div>;
+  }
+
+  if (!user) {
+    return (
+      <div className="auth-page">
+        <div className="auth-lattice-bg" />
+        <div className="auth-logo">
+          <div className="auth-logo-diamond">
+            <div className="auth-logo-diamond-bg" />
+            <div className="auth-logo-diamond-inner" />
+            <span className="auth-logo-char">漢</span>
+          </div>
+          <h1>{t('menu.titleSimple')}</h1>
+          <p>Master Janggi</p>
+        </div>
+        <div className="auth-form-card" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          <Link to="/login" className="auth-submit-btn" style={{ textAlign: 'center', textDecoration: 'none' }}>
+            {t('menu.login')}
+          </Link>
+          <Link to="/register" className="auth-secondary-btn">
+            {t('menu.register')}
+          </Link>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <>

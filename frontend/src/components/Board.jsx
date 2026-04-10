@@ -7,7 +7,7 @@ import { useLanguage } from '../context/LanguageContext';
 import Piece from './Piece';
 import { TEAM, PIECE_TYPE, SETUP_TYPES, generateBoard } from '../game/constants';
 import { RESULT_METHOD, normalizeResultMethod } from '../game/result';
-import { getValidMoves, getSafeMoves, isCheck, isCheckmate, calculateScore } from '../game/rules';
+import { getSafeMoves, isCheck, isCheckmate, calculateScore } from '../game/rules';
 import { AI_LEVELS, DEFAULT_AI_TIER, clampAiTier, getAiLevel } from '../game/aiLevels';
 import './Board.css';
 
@@ -211,7 +211,6 @@ const Board = ({
     viewTeam, setViewTeam, 
     invertColor, setInvertColor, 
     useRotatedPieces, setUseRotatedPieces, 
-    styleVariant, setStyleVariant,
     boardZoomed = false,
     setBoardZoomed = () => {}
 }) => {
@@ -222,9 +221,6 @@ const Board = ({
   useEffect(() => {
     tRef.current = t;
   }, [t]);
-  const files = 9;
-  const ranks = 10;
-  
   // Game States
   // IDLE -> MATCHING -> (AI) SELECT_SIDE -> SETUP_HAN/SETUP_CHO -> SETUP_HAN/SETUP_CHO -> PLAYING
   // IDLE -> MATCHING -> (Online) MATCH_FOUND -> SETUP_HAN / WAITING_HAN -> SETUP_CHO / WAITING_CHO -> PLAYING
@@ -992,7 +988,7 @@ const Board = ({
     }
   };
 
-  const applyMove = (from, to, isLocal) => {
+  const applyMove = (from, to) => {
     const currentBoard = cloneBoardState(boardRef.current);
     const currentTurn = turnRef.current;
     const moveTimestamp = new Date().toISOString();
@@ -1305,7 +1301,7 @@ const Board = ({
       await axios.post('/api/social/villains', { targetUserId });
       showToast(t('board.alerts.villainAdded'));
       setPlayerPopupInfo(null);
-    } catch (_err) {
+    } catch {
       showToast(t('board.alerts.villainAddFailed'));
     } finally {
       setIsRegisteringVillain(false);
@@ -1583,7 +1579,7 @@ const Board = ({
                                         <div className="setup-fs-opponent-pieces">
                                             {opponentSetupPieces.map((pType, idx) => (
                                                 <div key={`opponent-setup-${idx}`} className="setup-fs-piece">
-                                                    <Piece team={opponentSetupTeam} type={pType} styleVariant={styleVariant} inverted={invertColor} />
+                                                    <Piece team={opponentSetupTeam} type={pType} inverted={invertColor} />
                                                 </div>
                                             ))}
                                         </div>
@@ -1606,7 +1602,7 @@ const Board = ({
                                                 <div className="setup-fs-option-pieces">
                                                     {pieces.map((pType, idx) => (
                                                         <div key={idx} className="setup-fs-piece">
-                                                            <Piece team={setupTeam} type={pType} styleVariant={styleVariant} inverted={invertColor} />
+                                                            <Piece team={setupTeam} type={pType} inverted={invertColor} />
                                                         </div>
                                                     ))}
                                                 </div>
@@ -1677,7 +1673,7 @@ const Board = ({
             <div className="captured-bar top">
                 {topCaptured.map((pieceType, idx) => (
                     <div key={`cap-top-${pieceType}-${idx}`} className="captured-bar-piece">
-                        <Piece team={topTeam} type={pieceType} styleVariant={styleVariant} inverted={invertColor} />
+                        <Piece team={topTeam} type={pieceType} inverted={invertColor} />
                     </div>
                 ))}
             </div>
@@ -1727,7 +1723,7 @@ const Board = ({
                                         {isValid && <div className="move-marker" />}
                                         {piece && (
                                             <div style={{ width: '100%', height: '100%', display: 'flex', justifyContent: 'center', alignItems: 'center', transform: `rotate(${rotation}deg)`, transition: 'transform 0.3s ease' }}>
-                                                <Piece team={piece.team} type={piece.type} styleVariant={styleVariant} inverted={invertColor} />
+                                                <Piece team={piece.team} type={piece.type} inverted={invertColor} />
                                             </div>
                                         )}
                                     </div>
@@ -1742,7 +1738,7 @@ const Board = ({
             <div className="captured-bar bottom">
                 {bottomCaptured.map((pieceType, idx) => (
                     <div key={`cap-bot-${pieceType}-${idx}`} className="captured-bar-piece">
-                        <Piece team={bottomTeam} type={pieceType} styleVariant={styleVariant} inverted={invertColor} />
+                        <Piece team={bottomTeam} type={pieceType} inverted={invertColor} />
                     </div>
                 ))}
             </div>

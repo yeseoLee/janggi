@@ -13,7 +13,6 @@ function GamePage() {
   const [viewTeam, setViewTeam] = useState(TEAM.CHO);
   const [invertColor, setInvertColor] = useState(false);
   const [useRotatedPieces, setUseRotatedPieces] = useState(false);
-  const [styleVariant, setStyleVariant] = useState('2');
   const [boardZoomed, setBoardZoomed] = useState(() => localStorage.getItem(BOARD_ZOOM_STORAGE_KEY) === '1');
 
   useEffect(() => {
@@ -30,8 +29,6 @@ function GamePage() {
         setInvertColor={setInvertColor}
         useRotatedPieces={useRotatedPieces}
         setUseRotatedPieces={setUseRotatedPieces}
-        styleVariant={styleVariant}
-        setStyleVariant={setStyleVariant}
         boardZoomed={boardZoomed}
         setBoardZoomed={setBoardZoomed}
       />

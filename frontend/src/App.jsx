@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/set-state-in-effect */
 import { useEffect, useRef, useState } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
@@ -33,7 +34,7 @@ const isHardReload = () => {
         if (typeof performance?.navigation?.type === 'number') {
             return performance.navigation.type === 1;
         }
-    } catch (_err) {
+    } catch {
         return false;
     }
     return false;
