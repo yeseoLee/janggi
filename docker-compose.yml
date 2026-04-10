@@ -8,7 +8,7 @@ services:
       POSTGRES_DB: janggi_db
     # ports not exposed externally - only accessed via docker network
     volumes:
-      - ./backend/init.sql:/docker-entrypoint-initdb.d/init.sql
+      - ./api-server/init.sql:/docker-entrypoint-initdb.d/init.sql
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U janggi_user -d janggi_db"]
@@ -17,9 +17,9 @@ services:
       retries: 12
       start_period: 5s
 
-  backend:
-    build: ./backend
-    container_name: janggi-backend
+  api-server:
+    build: ./api-server
+    container_name: janggi-api-server
     ports:
       - "3000:3000"
     environment:
@@ -43,7 +43,7 @@ services:
     ports:
       - "80:80"
     depends_on:
-      - backend
+      - api-server
       - chat-server
 
   ai-server:
